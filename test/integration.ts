@@ -1,0 +1,91 @@
+import assert from 'node:assert/strict';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
+
+export async function run(): Promise<void> {
+  const extension = vscode.extensions.getExtension('studykit.obsidian-markdown');
+  assert.ok(extension, 'Development extension is installed');
+  await extension.activate();
+  const root = vscode.workspace.workspaceFolders![0].uri.fsPath;
+  const showcase = await vscode.workspace.openTextDocument(path.join(root, 'Showcase.md'));
+  await vscode.window.showTextDocument(showcase);
+  await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+  const render = () => vscode.commands.executeCommand<string>('markdown.api.render', showcase);
+  const html = await render();
+  assert.ok(html);
+  assert.match(html, /<table class="frontmatter"/);
+  assert.doesNotMatch(html, /obsidian-properties/);
+  assert.match(html, /obsidian-callout/);
+  assert.match(html, /obsidian-note-embed/);
+  assert.match(html, /obsidian-embed-\d+-implementation/);
+  assert.match(html, /width="240"/);
+  assert.doesNotMatch(html, /This comment must not be visible/);
+  assert.match(html, /data-href="notes\/Linked%20note\.md/);
+  assert.match(html, /<a class="obsidian-link" href="notes\/Linked%20note\.md" data-href="notes\/Linked%20note\.md">연결된 노트<\/a>/);
+  assert.match(html, /<a class="obsidian-link" href="notes\/Linked%20note\.md#implementation" data-href="notes\/Linked%20note\.md#implementation">제목 링크<\/a>/);
+  assert.match(html, /<a class="obsidian-link" href="#obsidian-block-checklist" data-href="#obsidian-block-checklist">블록 링크<\/a>/);
+  assert.doesNotMatch(html, /<kbd>/);
+  assert.match(html, /<a class="obsidian-link" href="notes\/Linked%20note\.md" data-href="notes\/Linked%20note\.md">표시 이름<\/a>/);
+  assert.match(html, /<img [^>]*width="100"[^>]*class="obsidian-image"/);
+  assert.doesNotMatch(html, /Embedded file not found/);
+  assert.match(html, /footnote-item/);
+  assert.equal((html.match(/class="footnotes obsidian-footnotes"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /↩|footnote-backref/);
+  assert.match(html, /class="obsidian-footnote-number" href="#fnref1"/);
+  assert.match(html, /obsidian-block-checklist/);
+  console.log('PASS: built-in markdown.api.render loads the plugin and renders all showcase syntax');
+
+  const linked = await vscode.workspace.openTextDocument(path.join(root, 'notes/Linked note.md'));
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(linked.uri, new vscode.Position(linked.lineCount, 0), '\nUnsaved integration content.\n');
+  await vscode.workspace.applyEdit(edit);
+  assert.match((await render())!, /Unsaved integration content/);
+  console.log('PASS: note embeds read unsaved VS Code document contents');
+
+  const markdownSettings = vscode.workspace.getConfiguration('markdown');
+  const previousFrontmatter = markdownSettings.inspect<string>('preview.frontMatter')?.globalValue;
+  const propertiesDocument = {
+    uri: showcase.uri, version: -1,
+    getText: () => '---\naliases: [Preview demo]\nrelated: "[[notes/Linked note]]"\ntitle: "<img src=x onerror=alert(1)>"\n---\n\nBody'
+  };
+  const renderProperties = () => vscode.commands.executeCommand<string>('markdown.api.render', propertiesDocument);
+  try {
+    await markdownSettings.update('preview.frontMatter', 'table', vscode.ConfigurationTarget.Global);
+    const table = (await renderProperties())!;
+    assert.match(table, /<table class="frontmatter"/);
+    assert.match(table, /<td><ul><li>Preview demo<\/li><\/ul><\/td>/);
+    assert.match(table, /<td>\[\[notes\/Linked note\]\]<\/td>/);
+    assert.match(table, /&lt;img src=x onerror=alert\(1\)&gt;/);
+    assert.doesNotMatch(table, /obsidian-properties|<a |<img /);
+    await markdownSettings.update('preview.frontMatter', 'codeBlock', vscode.ConfigurationTarget.Global);
+    assert.match((await renderProperties())!, /<pre class="frontmatter hljs"/);
+    await markdownSettings.update('preview.frontMatter', 'hide', vscode.ConfigurationTarget.Global);
+    const hidden = (await renderProperties())!;
+    assert.doesNotMatch(hidden, /frontmatter|Preview demo|related/);
+    assert.match(hidden, /Body/);
+  } finally {
+    await markdownSettings.update('preview.frontMatter', previousFrontmatter, vscode.ConfigurationTarget.Global);
+  }
+  console.log('PASS: frontmatter uses the native VS Code table, codeBlock and hide renderers');
+
+  const scratch = vscode.Uri.file(path.join(root, 'Integration scratch.md'));
+  try {
+    await vscode.workspace.fs.writeFile(scratch, Buffer.from('# Scratch\n\nIntegration watcher content.'));
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+    const virtual = { uri: showcase.uri, version: -1, getText: () => '![[Integration scratch]]' };
+    assert.match((await vscode.commands.executeCommand<string>('markdown.api.render', virtual))!, /Integration watcher content/);
+  } finally { await vscode.workspace.fs.delete(scratch); }
+  console.log('PASS: refreshed vault indexes include newly created files');
+
+  await vscode.commands.executeCommand('obsidianMarkdown.showPreview');
+  const hasPreview = () => vscode.window.tabGroups.all.flatMap(group => group.tabs).some(tab =>
+    tab.input instanceof vscode.TabInputWebview || (tab.input instanceof vscode.TabInputCustom && tab.input.viewType.includes('markdown')));
+  if (!hasPreview()) await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => { subscription.dispose(); reject(new Error('Markdown preview tab did not open.')); }, 10000);
+    const subscription = vscode.window.tabGroups.onDidChangeTabs(() => {
+      if (hasPreview()) { clearTimeout(timeout); subscription.dispose(); resolve(); }
+    });
+  });
+  assert.ok(hasPreview());
+  console.log('PASS: the built-in Markdown preview opens in an actual VS Code window');
+}

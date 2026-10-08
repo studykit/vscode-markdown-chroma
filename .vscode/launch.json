@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "configurations": [{
+    "name": "Run Obsidian Markdown Preview",
+    "type": "extensionHost",
+    "request": "launch",
+    "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/examples/vault"],
+    "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
+    "preLaunchTask": "npm: build"
+  }]
+}

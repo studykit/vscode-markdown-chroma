@@ -1,0 +1,74 @@
+.obsidian-link { color: var(--vscode-textLink-foreground); text-decoration: none; }
+.obsidian-link:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
+.obsidian-link.is-unresolved { opacity: .65; text-decoration: underline dotted; cursor: help; }
+.obsidian-callout {
+  --callout-color: rgb(84, 132, 224);
+  --callout-icon: lucide-pencil;
+  --obsidian-callout-color: var(--callout-color);
+  --callout-border-width: 0px;
+  --callout-border-opacity: .25;
+  margin: 1em 0;
+  border: var(--callout-border-width) solid color-mix(in srgb, var(--obsidian-callout-color) calc(var(--callout-border-opacity) * 100%), transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--obsidian-callout-color) 9%, transparent);
+  overflow: hidden;
+}
+.obsidian-callout[data-callout-style="info"] { --callout-color: rgb(8, 109, 221); --callout-icon: lucide-info; }
+.obsidian-callout[data-callout-style="abstract"] { --callout-color: rgb(42, 160, 174); --callout-icon: lucide-clipboard-list; }
+.obsidian-callout[data-callout-style="todo"] { --callout-icon: lucide-circle-check; }
+.obsidian-callout[data-callout-style="tip"] { --callout-color: rgb(42, 160, 174); --callout-icon: lucide-flame; }
+.obsidian-callout[data-callout-style="success"] { --callout-color: rgb(55, 156, 90); --callout-icon: lucide-check; }
+.obsidian-callout[data-callout-style="question"] { --callout-color: rgb(204, 145, 40); --callout-icon: lucide-circle-help; }
+.obsidian-callout[data-callout-style="warning"] { --callout-color: rgb(204, 145, 40); --callout-icon: lucide-triangle-alert; }
+.obsidian-callout[data-callout-style="failure"] { --callout-color: rgb(213, 75, 81); --callout-icon: lucide-x; }
+.obsidian-callout[data-callout-style="danger"] { --callout-color: rgb(213, 75, 81); --callout-icon: lucide-zap; }
+.obsidian-callout[data-callout-style="bug"] { --callout-color: rgb(213, 75, 81); --callout-icon: lucide-bug; }
+.obsidian-callout[data-callout-style="example"] { --callout-color: rgb(149, 106, 219); --callout-icon: lucide-list; }
+.obsidian-callout[data-callout-style="quote"] { --callout-color: rgb(140, 140, 140); --callout-icon: lucide-quote; }
+.obsidian-callout-title { display: flex; align-items: center; gap: .45em; padding: .85em 1em; font-weight: 600; color: var(--obsidian-callout-color); }
+.obsidian-callout-title-text { min-width: 0; overflow-wrap: anywhere; }
+summary.obsidian-callout-title { cursor: pointer; list-style: none; }
+summary.obsidian-callout-title::marker { content: ''; }
+summary.obsidian-callout-title::-webkit-details-marker { display: none; }
+summary.obsidian-callout-title:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: -2px; }
+.obsidian-callout-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1em; }
+.obsidian-callout-icon svg, .obsidian-callout-fold { width: 1em; height: 1em; }
+.obsidian-callout-fold { flex: none; transition: transform .15s ease; }
+details.obsidian-callout:not([open]) > summary > .obsidian-callout-fold { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .obsidian-callout-fold { transition: none; } }
+.obsidian-callout-content { padding: 0 1em .1em; }
+.obsidian-callout-content > :first-child { margin-top: .2em; }
+.obsidian-callout-content > :last-child { margin-bottom: .8em; }
+.obsidian-note-embed { border: 1px solid var(--vscode-panel-border); border-radius: 6px; margin: 1em 0; overflow: hidden; }
+.obsidian-embed-title { padding: .5em .9em; background: var(--vscode-textCodeBlock-background); font-size: .9em; }
+.obsidian-embed-content { padding: .3em 1em; }
+.obsidian-embed-content > :last-child { margin-bottom: .8em; }
+.obsidian-embed-error { display: block; padding: .6em .8em; margin: .6em 0; border-left: 3px solid var(--vscode-editorWarning-foreground); color: var(--vscode-descriptionForeground); }
+span.obsidian-embed-error { display: inline; padding: .15em .3em; }
+.obsidian-embed-error code { overflow-wrap: anywhere; }
+.obsidian-media, .obsidian-image { max-width: 100%; }
+.obsidian-image[height] { object-fit: contain; }
+.obsidian-tag { padding: .1em .35em; border-radius: 4px; background: var(--vscode-textCodeBlock-background); color: var(--vscode-textLink-foreground); }
+li.obsidian-task { list-style: none; }
+.obsidian-checkbox { margin-left: -1.3em; margin-right: .3em; accent-color: var(--vscode-textLink-foreground); }
+mark { background: rgba(232, 187, 45, .32); color: inherit; padding: .05em .1em; border-radius: 2px; }
+mark[data-highlight="red"] { background: rgba(226, 77, 77, .3); }
+mark[data-highlight="orange"] { background: rgba(239, 150, 55, .3); }
+mark[data-highlight="yellow"] { background: rgba(232, 187, 45, .32); }
+mark[data-highlight="green"] { background: rgba(66, 177, 106, .3); }
+mark[data-highlight="blue"] { background: rgba(67, 136, 226, .3); }
+mark[data-highlight="purple"] { background: rgba(161, 102, 220, .3); }
+.obsidian-embed-block { margin: .5em 0; }
+.footnote-ref { font-size: .75em; line-height: 0; }
+.footnote-ref a { text-decoration: none; padding: 0 .1em; }
+.obsidian-footnotes-sep { margin: 1.5em 0 .7em; border: 0; border-top: 1px solid var(--vscode-panel-border); }
+.obsidian-footnotes { font-size: .88em; color: var(--vscode-descriptionForeground); line-height: 1.5; }
+.obsidian-footnotes .obsidian-footnotes-list { list-style: none; margin: 0; padding: 0; }
+.obsidian-footnotes .footnote-item { display: flex; align-items: baseline; gap: .65em; margin: .35em 0; padding: 0; }
+.obsidian-footnote-number { flex: none; min-width: 1.3em; text-align: right; text-decoration: none; font-variant-numeric: tabular-nums; }
+.obsidian-footnote-content { min-width: 0; }
+.obsidian-footnote-content > :first-child { margin-top: 0; }
+.obsidian-footnote-content > :last-child { margin-bottom: 0; }
+.obsidian-footnote-content p { margin: .3em 0; }
+.obsidian-footnote-number:hover, .footnote-ref a:hover { text-decoration: underline; }
+.obsidian-footnote-number:focus-visible, .footnote-ref a:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }

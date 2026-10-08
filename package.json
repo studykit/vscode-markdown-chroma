@@ -1,0 +1,99 @@
+{
+  "name": "obsidian-markdown",
+  "displayName": "Obsidian Markdown Preview",
+  "description": "Render Obsidian links, embeds, callouts and formatting in VS Code's Markdown preview.",
+  "version": "0.1.0",
+  "publisher": "studykit",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "obsidian",
+    "markdown",
+    "preview",
+    "wikilink",
+    "callout"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "markdown.markdownItPlugins": true,
+    "markdown.previewStyles": [
+      "./media/preview.css"
+    ],
+    "markdown.previewScripts": [
+      "./dist/preview.js"
+    ],
+    "commands": [
+      {
+        "command": "obsidianMarkdown.showPreview",
+        "title": "Open Preview to the Side",
+        "category": "Obsidian Markdown"
+      },
+      {
+        "command": "obsidianMarkdown.refreshVault",
+        "title": "Refresh Vault Index",
+        "category": "Obsidian Markdown"
+      }
+    ],
+    "configuration": {
+      "title": "Obsidian Markdown",
+      "properties": {
+        "obsidianMarkdown.vaultRoot": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Vault path relative to the workspace folder, or an absolute path inside it. Empty discovers the nearest .obsidian folder, then uses the workspace folder."
+        },
+        "obsidianMarkdown.maxEmbedDepth": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "scope": "resource",
+          "description": "Maximum depth of nested note embeds. Cyclic embeds are stopped earlier."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/test/*.test.cjs",
+    "test:integration": "npm run build && node scripts/test-integration.mjs",
+    "check": "npm run typecheck && npm test",
+    "vscode:prepublish": "npm run build",
+    "package": "mkdir -p artifacts && vsce package --no-dependencies --no-rewrite-relative-links --allow-missing-repository --out artifacts/obsidian-markdown-0.1.0.vsix"
+  },
+  "dependencies": {
+    "github-slugger": "^2.0.0",
+    "lucide": "^1.53.0",
+    "markdown-it-mark": "^4.0.0",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.2",
+    "esbuild": "^0.25.10",
+    "jsdom": "^26.1.0",
+    "markdown-it": "^14.1.0",
+    "typescript": "^5.9.3"
+  }
+}
