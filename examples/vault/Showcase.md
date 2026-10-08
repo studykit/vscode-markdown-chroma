@@ -48,6 +48,18 @@ VS Code의 **기본 Markdown Preview**에서 Obsidian 문법을 확인하는 예
 | --- | --- |
 | [[notes/Linked note\|표시 이름]] | ![[attachments/preview.svg\|100]] |
 
+## Audio embed
+
+재생 버튼을 누르면 짧은 예제 소리가 납니다.
+
+![[attachments/sample.wav]]
+
+## List embed
+
+다른 노트에서 블록 ID로 목록 전체를 가져옵니다.
+
+![[notes/Embedded list#^my-list-id]]
+
 ## Heading embed
 
 ![[notes/Linked note#Implementation]]

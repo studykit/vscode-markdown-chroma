@@ -10,7 +10,7 @@ import { findSection, parseWiki, plainText, sectionSource } from './references';
 import type { PreviewHost, RenderEnvironment, WikiReference } from './types';
 
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.avif', '.bmp']);
-const audioExtensions = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.webm']);
+const audioExtensions = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.webm', '.aac', '.opus']);
 const videoExtensions = new Set(['.mp4', '.mkv', '.mov', '.ogv']);
 const calloutTypes: Record<string, string> = {
   abstract: 'abstract', summary: 'abstract', tldr: 'abstract', info: 'info', todo: 'todo',
@@ -402,12 +402,14 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
       copy[index].attrSet('data-src', pathToFileURL(target.resolution.path).href);
       env.containingImages?.add(pathToFileURL(target.resolution.path).href);
     }
-    const size = /\|(\d+)(?:x(\d+))?$/.exec(copy[index].content);
+    // Obsidian accepts both ![250](url) and ![alt|250x120](url).
+    const size = /^(?:([\s\S]*?)\|)?(\d+)(?:x(\d+))?$/.exec(copy[index].content);
     if (size) {
-      copy[index].attrSet('width', size[1]);
-      if (size[2]) copy[index].attrSet('height', size[2]);
+      copy[index].attrSet('width', size[2]);
+      if (size[3]) copy[index].attrSet('height', size[3]);
       const alt = new TokenClass('text', '', 0);
-      alt.content = copy[index].content.slice(0, size.index);
+      alt.content = size[1] ?? '';
+      copy[index].content = alt.content;
       copy[index].children = [alt];
     }
     return originalImage(copy, index, options, env, self);

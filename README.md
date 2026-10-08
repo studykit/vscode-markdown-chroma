@@ -18,7 +18,8 @@ VS Code의 기본 Markdown Preview에서 Obsidian 문법을 렌더링하는 확�
 | 제목·중첩 제목 링크 | `[[Note#Heading]]`, `[[Note#Parent#Child]]`, `[[#Heading]]` |
 | 블록 링크·식별자 | `[[Note#^id]]`, `문단 내용 ^id` |
 | 전체·제목·블록 임베드 | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^id]]` |
-| 이미지·크기 | `![[image.png\|240]]`, `![[image.png\|240x120]]`, `![alt\|240](image.png)` |
+| 이미지·크기 | `![[image.png\|240]]`, `![[image.png\|240x120]]`, `![250](https://example.com/image.png)`, `![alt\|240](image.png)` |
+| 목록 임베드 | 목록 뒤의 블록 ID를 참조하는 `![[Note#^my-list-id]]` |
 | Callout | `> [!note] 제목`, `[!warning]-`, `[!tip]+`, 중첩 Callout |
 | 강조·색상 | `==강조==`, `==🔴빨강==`, `==🟢초록==` 등 6색 |
 | 주석 | `%%인라인 주석%%`, 여러 줄의 `%%…%%` |
@@ -31,6 +32,38 @@ VS Code의 기본 Markdown Preview에서 Obsidian 문법을 렌더링하는 확�
 표 안의 파이프는 `\|`로 이스케이프합니다. 일반 본문에서는 `[[Note|표시 이름]]`처럼 작성합니다. 파일명에 `.md`를 생략할 수 있으며, Properties의 `aliases`도 링크 대상으로 찾습니다.
 
 노트 임베드는 한 줄에 단독으로 작성합니다. 제목 임베드는 해당 제목과 하위 제목을 포함하고, 다음 같은 수준 또는 상위 제목에서 끝납니다. 문단의 블록 ID는 끝에 붙이고, 목록·인용·Callout·표 전체의 ID는 블록 뒤에 빈 줄을 두고 별도 줄에 작성합니다.
+
+## 노트·이미지·오디오·목록 임베드
+
+[Obsidian 임베드 문서](https://obsidian.md/help/embeds)의 네 가지 기능을 지원합니다.
+
+```markdown
+![[My note]]
+![[My note#Heading]]
+![[My note#^block-id]]
+
+![[image.png]]
+![[image.png|100]]
+![[image.png|100x145]]
+![250](https://example.com/image.png)
+
+![[recording.wav]]
+
+![[My note#^my-list-id]]
+```
+
+이미지의 너비만 지정하면 비율을 유지하고, 너비와 높이를 함께 지정하면 해당 크기로 표시합니다. 오디오는 재생·일시정지·탐색 컨트롤을 갖춘 플레이어로 표시합니다. `.mp3`, `.wav`, `.ogg`, `.m4a`, `.flac`, `.webm`, `.aac`, `.opus`를 인식하며 실제 재생은 VS Code의 미디어 코덱 지원을 따릅니다.
+
+목록 원본 노트에는 아래처럼 목록 다음에 빈 줄을 두고 ID를 작성합니다. 임베드에는 목록 전체가 표시되며, 중첩 목록·번호 목록·작업 목록의 서식도 유지합니다.
+
+```markdown
+- list item 1
+- list item 2
+
+^my-list-id
+```
+
+`examples/vault/Showcase.md`에서 로컬 이미지, 재생 가능한 WAV 파일, 다른 노트의 목록 임베드를 확인할 수 있습니다.
 
 ## Callout 모양과 아이콘
 

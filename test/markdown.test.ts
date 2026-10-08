@@ -249,6 +249,77 @@ test('images use width/height, and escaped table pipes do not break cells', asyn
   assert.equal(doc.querySelector('img')?.getAttribute('height'), '80');
 });
 
+test('Obsidian image embeds support natural size, width and width by height', async t => {
+  const f = await fixture(t, { 'Main.md': '', 'picture.svg': '<svg/>' });
+  const env = f.environment();
+  const doc = dom(f.md.render('![[picture.svg]]\n\n![[picture.svg|100]]\n\n![[picture.svg|100x145]]', env));
+  const images = [...doc.querySelectorAll('img')];
+  assert.equal(images.length, 3);
+  assert.deepEqual(images.map(image => image.getAttribute('width')), [null, '100', '100']);
+  assert.deepEqual(images.map(image => image.getAttribute('height')), [null, null, '145']);
+  assert.ok(images.every(image => image.src === f.host.resourceUri(path.join(f.root, 'picture.svg'), env)));
+  assert.ok(images.every(image => image.alt === 'picture.svg'));
+  assert.equal(env.containingImages?.size, 1);
+});
+
+test('Markdown image sizing works for external URLs and keeps descriptive alt text', async t => {
+  const f = await fixture(t, { 'Main.md': '', 'picture.svg': '<svg/>' });
+  const source = '![250](https://example.com/photo.jpg)\n\n![100x145](https://example.com/photo.jpg)\n\n![설명|120x80](picture.svg)\n\n![설명](picture.svg)\n\n`![250](https://example.com/photo.jpg)`';
+  const doc = dom(f.render(source));
+  const images = [...doc.querySelectorAll('img')];
+  assert.deepEqual(images.map(image => image.getAttribute('width')), ['250', '100', '120', null]);
+  assert.deepEqual(images.map(image => image.getAttribute('height')), [null, '145', '80', null]);
+  assert.deepEqual(images.map(image => image.alt), ['', '', '설명', '설명']);
+  assert.equal(images[0].src, 'https://example.com/photo.jpg');
+  assert.match(images[2].src, /\/picture\.svg$/);
+  assert.equal(doc.querySelector('code')?.textContent, '![250](https://example.com/photo.jpg)');
+});
+
+test('audio embeds use vault resources and controls, including inside an embedded note', async t => {
+  const formats = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'webm', 'aac', 'opus'];
+  const files: Record<string, string> = {
+    'Main.md': '', 'sub/Note.md': '![[Recording & demo.wav]]', 'sub/Recording & demo.wav': ''
+  };
+  for (const format of formats) files[`audio/Sample.${format}`] = '';
+  const f = await fixture(t, files);
+  const doc = dom(f.render(formats.map(format => `![[audio/Sample.${format}]]`).join('\n\n') + '\n\n![[sub/Note]]'));
+  const players = [...doc.querySelectorAll('audio')];
+  assert.equal(players.length, formats.length + 1);
+  assert.ok(players.every(player => player.controls && player.preload === 'metadata'));
+  for (let index = 0; index < formats.length; index++) {
+    assert.match(players[index].src, new RegExp(`/audio/Sample\\.${formats[index]}$`));
+    assert.equal(players[index].querySelector('a')?.getAttribute('data-href'), `audio/Sample.${formats[index]}`);
+  }
+  assert.match(players.at(-1)!.src, /\/sub\/Recording%20&%20demo\.wav$/);
+  assert.equal(players.at(-1)!.querySelector('a')?.getAttribute('href'), 'sub/Recording%20%26%20demo.wav');
+  assert.equal(doc.querySelector('.obsidian-embed-error'), null);
+});
+
+test('list block embeds preserve nested, ordered and task lists without surrounding text', async t => {
+  const lists = [
+    '- list item 1\n- list item 2',
+    '- parent **bold**\n  - child\n- sibling',
+    '3. third\n4. fourth',
+    '- [ ] todo\n- [x] done'
+  ];
+  const f = await fixture(t, { 'Main.md': '', 'My note.md': '' });
+  for (const [index, list] of lists.entries()) {
+    const source = `Before list.\n\n${list}\n\n^my-list-id\n\nAfter list.`;
+    f.dirty.set(path.join(f.root, 'My note.md'), source);
+    const doc = dom(f.render('![[My note#^my-list-id]]'));
+    const body = doc.querySelector('.obsidian-embed-content')!;
+    assert.ok(body.querySelector('ul, ol'), String(index));
+    assert.doesNotMatch(body.textContent ?? '', /Before list|After list|\^my-list-id/);
+    if (index === 0) assert.deepEqual([...body.querySelectorAll('li')].map(item => item.textContent?.trim()), ['list item 1', 'list item 2']);
+    if (index === 1) {
+      assert.equal(body.querySelector('li ul li')?.textContent, 'child');
+      assert.equal(body.querySelector('strong')?.textContent, 'bold');
+    }
+    if (index === 2) assert.equal(body.querySelector('ol')?.getAttribute('start'), '3');
+    if (index === 3) assert.deepEqual([...body.querySelectorAll<HTMLInputElement>('input')].map(input => input.checked), [false, true]);
+  }
+});
+
 test('wiki labels and embed sizes work when table parsers retain escaped pipes', async t => {
   const f = await fixture(t, { 'Main.md': '', 'notes/Linked note.md': '# Implementation', 'attachments/preview.svg': '<svg/>' });
   // Preserve the cell source that multimd-table passes to the inline parser.

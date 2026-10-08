@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { JSDOM } from 'jsdom';
 
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension('studykit.obsidian-markdown');
@@ -34,6 +35,29 @@ export async function run(): Promise<void> {
   assert.match(html, /class="obsidian-footnote-number" href="#fnref1"/);
   assert.match(html, /obsidian-block-checklist/);
   console.log('PASS: built-in markdown.api.render loads the plugin and renders all showcase syntax');
+
+  const document = new JSDOM(html).window.document;
+  const audio = document.querySelector('audio.obsidian-media');
+  assert.ok(audio);
+  assert.ok(audio.hasAttribute('controls'));
+  assert.equal(audio.getAttribute('preload'), 'metadata');
+  assert.match(audio.getAttribute('src') ?? '', /\/attachments\/sample\.wav$/);
+  const listEmbed = [...document.querySelectorAll('.obsidian-note-embed')].find(embed =>
+    embed.querySelector('.obsidian-embed-title a')?.getAttribute('href') === 'notes/Embedded%20list.md#obsidian-block-my-list-id');
+  assert.ok(listEmbed);
+  const listContent = listEmbed.querySelector('.obsidian-embed-content')!;
+  assert.equal(listContent.querySelectorAll('li').length, 5);
+  assert.equal(listContent.querySelector('li ul li')?.textContent?.trim(), '중첩 목록도 유지합니다.');
+  assert.doesNotMatch(listContent.textContent ?? '', /포함되지 않습니다|\^my-list-id/);
+  const sizedImages = {
+    uri: vscode.Uri.file(path.join(root, 'Image sizing integration.md')), version: -1,
+    getText: () => '![250](https://example.com/photo.jpg)\n\n![100x145](https://example.com/photo.jpg)'
+  };
+  const imageHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', sizedImages))!;
+  const images = [...new JSDOM(imageHtml).window.document.querySelectorAll('img')];
+  assert.deepEqual(images.map(image => image.getAttribute('width')), ['250', '100']);
+  assert.deepEqual(images.map(image => image.getAttribute('height')), [null, '145']);
+  console.log('PASS: native preview renders audio controls, a full nested list embed and external image dimensions');
 
   const linked = await vscode.workspace.openTextDocument(path.join(root, 'notes/Linked note.md'));
   const edit = new vscode.WorkspaceEdit();
