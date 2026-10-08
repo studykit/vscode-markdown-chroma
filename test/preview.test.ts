@@ -58,3 +58,22 @@ test('custom SVG icons render without xmlns and discard scripts, events and exte
   assert.equal(callout.querySelector('.obsidian-callout-icon path')?.getAttribute('d'), 'M1 1h2');
   page.window.close();
 });
+
+test('MyST tabs support clicks, arrow keys and replaced preview contents', async () => {
+  const html = '<div class="myst-tabs"><div role="tablist"><button role="tab" aria-selected="true">One</button><button role="tab" aria-selected="false">Two</button></div><div role="tabpanel">First</div><div role="tabpanel" hidden>Second</div></div>';
+  const page = new JSDOM(html, { runScripts: 'outside-only' });
+  page.window.eval(previewScript());
+  let tabs = page.window.document.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+  tabs[1].click();
+  assert.equal(tabs[1].getAttribute('aria-selected'), 'true');
+  assert.equal(page.window.document.querySelectorAll<HTMLElement>('[role="tabpanel"]')[1].hidden, false);
+  tabs[1].dispatchEvent(new page.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+  assert.equal(page.window.document.activeElement, tabs[0]);
+  page.window.document.body.innerHTML = html;
+  await tick();
+  tabs = page.window.document.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+  tabs[1].click();
+  assert.equal(tabs[1].getAttribute('aria-selected'), 'true');
+  page.window.close();
+});

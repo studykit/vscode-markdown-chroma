@@ -1,6 +1,30 @@
-# Obsidian Markdown Preview
+# Obsidian & MyST Markdown Preview
 
-VS Code의 기본 Markdown Preview에서 Obsidian 문법을 렌더링하는 확장입니다.
+VS Code의 기본 Markdown Preview에서 Obsidian과 MyST 문법을 함께 렌더링하는 확장입니다.
+
+## MyST / Jupyter Book 2 문법
+
+**VS Code 기본 Markdown Preview**에서 MyST를 바로 렌더링합니다. `myst.yml`이 있으면 가장 가까운 설정의 `project` 값(수식 매크로·번호 매기기·abbreviations·bibliography·parser 옵션)을 읽고, 없으면 기본값을 사용합니다. 문서 frontmatter가 프로젝트 값을 덮어쓰며, 로컬 `extends`도 지원합니다. 프로젝트 생성, 별도 서버, Node/npm 설치가 필요하지 않습니다. 저장 전 편집 내용도 기본 Preview에 반영됩니다. 공식 `myst-parser 1.7.4`와 `myst-transforms` 및 공식 directive 확장을 확장 안에 포함하고, 결과 AST를 VS Code Preview용 HTML로 표시합니다. 별도 Markdown editor는 제공하지 않습니다.
+
+| Authoring 문법 | 기본 Preview에서의 동작 |
+| --- | --- |
+| Typography / Blocks / Inline Options | role, directive의 YAML·colon·인라인 옵션, 라벨, div/span, 주석, 블록 메타데이터 |
+| Callouts & Admonitions | 중첩 callout, dropdown 접기 |
+| Images, Figures & Videos | 이미지 크기·정렬, 캡션·번호·참조, MP4, 로컬 이미지 wildcard |
+| Math & Equations | KaTeX 수식, 레이블과 식 참조 |
+| Tables / Code | 표, list-table, 코드·캡션 |
+| Cross-references | 문서 내 레이블과 번호 참조; 문서 링크는 기본 Markdown 탐색 |
+| Embed & Include Content | 로컬 include/literalinclude, 레이블 embed, 저장된 Jupyter notebook 출력 |
+| Citations & Bibliography | 문서 frontmatter의 `bibliography` 또는 bibliography directive의 로컬 BibTeX 파일 |
+| Proofs / Exercises | 정리·증명·연습문제·해답과 번호 |
+| Diagrams | Mermaid |
+| Asides & Margins | aside/margin/sidebar/topic; 좁은 Preview에서는 본문 안에 배치 |
+| Grids, Tabs & Cards | 반응형 grid, 전환 가능한 tabs, cards |
+| Glossaries, Terms & Index | glossary/term 참조와 index 메타데이터 |
+
+예제: [`examples/myst/index.md`](examples/myst/index.md), [`layout.md`](examples/myst/layout.md), [`syntax.md`](examples/myst/syntax.md). 공식 [Authoring 문서](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), [figures](https://mystmd.org/guide/figures)를 기준으로 합니다.
+
+Preview는 로컬 파일을 표시하며 코드를 실행하지 않습니다. DOI·외부 프로젝트의 자동 조회, 사용자 프로젝트 플러그인, Jupyter 실행, `.tex` 문서 변환, PDF/EPS/TIFF 이미지 변환과 PDF·Word 출판은 MyST CLI의 빌드 기능에 해당하며 이 Preview에서 실행하지 않습니다. 외부 iframe은 기본 Preview의 보안 정책에 맞춰 링크로 표시합니다. 지원하지 않거나 잘못된 directive는 원문 대신 오류 안내를 표시합니다. Frontmatter와 Obsidian 각주는 기존 표시 방식을 유지합니다.
 
 ## 사용 방법
 
@@ -108,7 +132,7 @@ Obsidian과 같은 `.callout`, `.callout-title`, `.callout-icon`, `.callout-cont
 - VS Code 기본 읽기 미리보기를 확장합니다. 편집기 내부의 Obsidian Live Preview는 포함하지 않습니다.
 - 체크박스는 읽기 전용이고, 태그는 표시만 합니다. 체크박스 수정과 태그 검색은 포함하지 않습니다.
 - PDF·Canvas 등 별도 뷰어가 필요한 첨부는 파일 링크로 표시합니다.
-- 수식·Mermaid의 자체 렌더러, Dataview·Templater·Bases·검색 쿼리 실행, Obsidian 테마·CSS snippet 자동 로딩은 포함하지 않습니다. 일반 코드 블록은 기존 렌더러로 전달합니다.
+- Dataview·Templater·Bases·검색 쿼리 실행, Obsidian 테마·CSS snippet 자동 로딩은 포함하지 않습니다. 일반 코드 블록은 기존 렌더러로 전달합니다.
 - 데스크톱의 로컬 파일 vault를 대상으로 합니다. 가상 파일 시스템과 웹 확장은 지원하지 않습니다.
 - 노트별 읽기 한도는 2 MiB, 미리보기별 임베드 한도는 100개/4 MiB입니다. 순환 참조는 중단하고 미리보기에 원인을 표시합니다.
 - HTML은 VS Code 기본 Markdown 렌더러와 보안 설정을 따릅니다.

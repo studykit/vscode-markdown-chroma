@@ -4,3 +4,4 @@ artifacts/
 *.vsix
 *.log
 .DS_Store
+_build/

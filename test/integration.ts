@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
 import * as vscode from 'vscode';
 import { JSDOM } from 'jsdom';
 
@@ -112,4 +113,52 @@ export async function run(): Promise<void> {
   });
   assert.ok(hasPreview());
   console.log('PASS: the built-in Markdown preview opens in an actual VS Code window');
+
+  const mystRoot = vscode.workspace.workspaceFolders!.find(folder => path.basename(folder.uri.fsPath) === 'myst')!.uri.fsPath;
+  for (const name of ['index', 'layout', 'syntax']) {
+    const doc = await vscode.workspace.openTextDocument(path.join(mystRoot, `${name}.md`));
+    const html = (await vscode.commands.executeCommand<string>('markdown.api.render', doc))!;
+    const dom = new JSDOM(html).window.document;
+    assert.doesNotMatch(dom.body.textContent ?? '', /:::\{|:label:|:class:|\{note\}/);
+    assert.match(html, /<table class="frontmatter"/);
+    if (name === 'index') {
+      assert.ok(dom.querySelector('.myst-admonition'));
+      assert.ok(dom.querySelector('.katex'));
+      assert.ok(dom.querySelector('.myst-tabs [role="tab"]'));
+      assert.ok(dom.querySelector('.myst-grid .myst-card'));
+      assert.match(dom.body.textContent ?? '', /notebook output: 42/i);
+      assert.match(dom.body.textContent ?? '', /include directive/);
+    } else if (name === 'layout') {
+      assert.equal(dom.querySelectorAll('.myst-aside').length, 4);
+      assert.ok(dom.querySelector('figure figcaption strong'));
+      assert.ok(dom.querySelector('video[controls]'));
+    } else {
+      assert.ok(dom.querySelector('details#yaml-options-note'));
+      assert.ok(dom.querySelector('details#inline-options-tip'));
+      assert.ok(dom.querySelector('#inline-options-span'));
+      assert.ok(dom.querySelector('.myst-glossary'));
+      assert.ok(dom.querySelector('.myst-mermaid'));
+    }
+    console.log(`PASS: native markdown.api.render renders MyST ${name} without a project server`);
+  }
+  const configUri = vscode.Uri.file(path.join(mystRoot, 'myst.yml'));
+  try {
+    await vscode.workspace.fs.writeFile(configUri, Buffer.from('version: 1\nproject:\n  math:\n    "\\\\RR": "\\\\mathbb{R}"\n  settings:\n    parser:\n      dollarmath: false\n'));
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+    const source = { uri: vscode.Uri.file(path.join(mystRoot, 'config-test.md')), version: -1, getText: () => '$x$ {math}`\RR`' };
+    const html = (await vscode.commands.executeCommand<string>('markdown.api.render', source))!;
+    const dom = new JSDOM(html).window.document;
+    assert.match(dom.body.textContent ?? '', /\$x\$/);
+    assert.equal(dom.querySelectorAll('.katex').length, 1);
+    assert.equal(dom.querySelector('.katex-error'), null);
+    console.log('PASS: native preview applies optional myst.yml parser settings and math macros');
+  } finally {
+    await vscode.workspace.fs.delete(configUri);
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+  }
+  const myst = await vscode.workspace.openTextDocument(path.join(mystRoot, 'syntax.md'));
+  await vscode.window.showTextDocument(myst);
+  await vscode.commands.executeCommand('markdown.showPreviewToSide', myst.uri);
+  assert.ok(hasPreview());
+  console.log('PASS: default VS Code Markdown preview opens MyST documents');
 }

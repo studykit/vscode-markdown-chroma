@@ -6,3 +6,4 @@
 !dist/preview.js
 !dist/THIRD_PARTY_NOTICES.txt
 !media/preview.css
+!dist/katex/**

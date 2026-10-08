@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import * as vscode from 'vscode';
 import type MarkdownIt from 'markdown-it';
 import { extendObsidianMarkdown } from './markdown';
+import { extendMystMarkdown } from './myst';
 import { discoverVault, FileVault, isWithin } from './vault';
 import type { PreviewHost, RenderEnvironment } from './types';
 
@@ -91,7 +92,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (event.document.languageId === 'markdown') {
         if (event.document.uri.scheme === 'file') forSource(event.document.uri.fsPath)?.updateAliases(event.document.uri.fsPath, event.document.getText());
         refreshPreviews();
-      }
+      } else if (event.document.languageId === 'yaml') refreshPreviews();
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => { void refresh(); }),
     vscode.workspace.onDidChangeConfiguration(event => {
@@ -114,5 +115,5 @@ export async function activate(context: vscode.ExtensionContext) {
     ...(vscode.workspace.workspaceFolders ?? []).filter(folder => folder.uri.scheme === 'file').map(folder => ensure(path.join(folder.uri.fsPath, '__obsidian_index__.md'))),
     ...vscode.workspace.textDocuments.filter(document => document.languageId === 'markdown' && document.uri.scheme === 'file').map(document => ensure(document.uri.fsPath))
   ]);
-  return { extendMarkdownIt: (md: MarkdownIt) => extendObsidianMarkdown(md, host), refresh };
+  return { extendMarkdownIt: (md: MarkdownIt) => extendMystMarkdown(extendObsidianMarkdown(md, host), host), refresh };
 }

@@ -1,4 +1,5 @@
 import { icons, createElement } from 'lucide';
+import mermaid from 'mermaid';
 
 (() => {
   if (window.__obsidianMarkdownPreview) return;
@@ -53,8 +54,40 @@ import { icons, createElement } from 'lucide';
     const fallback = defaultIcons.get(icon)?.cloneNode(true);
     if (replacement || fallback) icon.replaceChildren(replacement ?? fallback);
   };
+  let diagramCounter = 0;
+  let diagramsReady = false;
+  const renderedDiagrams = new WeakSet();
+  const boundTabs = new WeakSet();
   const restore = () => {
     if (!document?.body) return;
+    document.querySelectorAll('.myst-tabs').forEach(element => {
+      if (boundTabs.has(element)) return;
+      boundTabs.add(element);
+      const tabs = [...element.querySelectorAll(':scope > [role="tablist"] > [role="tab"]')];
+      const panels = [...element.querySelectorAll(':scope > [role="tabpanel"]')];
+      const select = index => {
+        tabs.forEach((tab, i) => { tab.setAttribute('aria-selected', String(i === index)); tab.tabIndex = i === index ? 0 : -1; });
+        panels.forEach((panel, i) => { panel.hidden = i !== index; });
+      };
+      const group = `myst-tabs-${++diagramCounter}`;
+      tabs.forEach((tab, index) => {
+        tab.id = `${group}-tab-${index}`;
+        if (panels[index]) { panels[index].id = `${group}-panel-${index}`; panels[index].setAttribute('aria-labelledby', tab.id); tab.setAttribute('aria-controls', panels[index].id); }
+        tab.addEventListener('click', () => select(index));
+        tab.addEventListener('keydown', event => {
+          const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : undefined;
+          if (next !== undefined) { event.preventDefault(); select(next); tabs[next].focus(); }
+        });
+      });
+    });
+    document.querySelectorAll('.myst-mermaid').forEach(element => {
+      if (renderedDiagrams.has(element)) return;
+      renderedDiagrams.add(element);
+      if (!diagramsReady) { mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', maxTextSize: 50000, theme: document.body.classList.contains('vscode-dark') ? 'dark' : 'default' }); diagramsReady = true; }
+      mermaid.render(`myst-diagram-${++diagramCounter}`, element.textContent).then(({ svg }) => {
+        if (element.isConnected) element.innerHTML = svg;
+      }).catch(() => { element.setAttribute('title', 'Unable to render Mermaid diagram'); });
+    });
     document.querySelectorAll('.obsidian-callout').forEach(updateIcon);
     document.querySelectorAll('details.obsidian-callout').forEach((element, index) => {
       const title = element.querySelector('summary')?.textContent ?? '';
