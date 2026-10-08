@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as vscode from 'vscode';
 import { JSDOM } from 'jsdom';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
+import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension('studykit.markdown-chroma');
@@ -33,8 +34,8 @@ export async function run(): Promise<void> {
   assert.doesNotMatch(html, /Embedded file not found/);
   assert.match(html, /footnote-item/);
   assert.equal((html.match(/class="footnotes obsidian-footnotes"/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /↩/);
-  assert.match(html, /class="obsidian-footnote-backref" href="#fnref1"[^>]*>↑\d+<\/a>/);
+  assert.doesNotMatch(html, /↑/);
+  assert.match(html, /class="obsidian-footnote-backref" href="#fnref1"[^>]*>↩[₀-₉]*<\/a>/);
   assert.match(html, /obsidian-block-checklist/);
   console.log('PASS: built-in markdown.api.render loads the plugin and renders all showcase syntax');
 
@@ -46,10 +47,18 @@ export async function run(): Promise<void> {
   const footnoteHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', footnoteDocument))!;
   const footnoteDom = new JSDOM(footnoteHtml).window.document;
   const backrefs = [...footnoteDom.querySelectorAll('.obsidian-footnote-backref')];
-  assert.deepEqual(backrefs.map(link => link.textContent), ['↑1', '↑2', '↑3']);
-  assert.equal(backrefs[2].getAttribute('title'), 'Next with "quotes".');
+  assert.deepEqual(backrefs.map(link => link.textContent), ['↩₁', '↩₂', '↩₃']);
+  assert.ok(backrefs.every(link => !link.hasAttribute('title')));
   for (const link of backrefs) assert.ok(footnoteDom.getElementById(link.getAttribute('href')!.slice(1)));
-  console.log('PASS: actual Markdown renderer produces numbered backlinks, hover sentences and unique targets');
+  console.log('PASS: actual Markdown renderer produces small return links without tooltips and unique targets');
+  for (const prefix of ['', '{kbd}`Ctrl`\n\n']) {
+    for (const [source, numbers] of [[manualFootnoteSource, ['1', '3']], [mixedFootnoteSource, ['2', '4', '1', '5', '3', '2']]] as const) {
+      const input = { uri: showcase.uri, version: -1, getText: () => prefix + source };
+      const rendered = (await vscode.commands.executeCommand<string>('markdown.api.render', input))!;
+      assertFootnoteNumbers(new JSDOM(rendered).window.document, [...numbers]);
+    }
+  }
+  console.log('PASS: actual Markdown and MyST renderers preserve manual footnote numbers and bracketed labels');
 
   const audio = document.querySelector('audio.obsidian-media');
   assert.ok(audio);

@@ -132,9 +132,9 @@ test('reference footnotes and inline footnotes are rendered together', async t =
   assert.equal(doc.querySelectorAll('.obsidian-footnotes').length, 1);
   assert.equal(doc.querySelector('.obsidian-footnote-number')?.tagName, 'SPAN');
   assert.equal(doc.querySelector('.obsidian-footnote-backref')?.getAttribute('href'), '#fnref1');
-  assert.equal(doc.querySelector('.obsidian-footnote-backref')?.textContent, '↑1');
+  assert.equal(doc.querySelector('.obsidian-footnote-backref')?.textContent, '↩');
   assert.equal(doc.querySelector('.footnote-backref'), null);
-  assert.doesNotMatch(doc.body.textContent ?? '', /↩/);
+  assert.doesNotMatch(doc.body.textContent ?? '', /↑/);
 });
 
 test('footnotes support repeated references, multiline definitions and forward references within notes', async t => {
@@ -373,24 +373,23 @@ test('embedded source maps do not scroll the parent editor to another note line'
 });
 
 
-test('footnote backlinks show reference order, hover text and distinct repeated destinations', async t => {
+test('footnote backlinks use small return links without tooltips and preserve repeated destinations', async t => {
   const f = await fixture(t, { 'Main.md': '' });
   const source = '# Title\n\nFirst[^n] and again[^n].\nNext line[^n] with "quoted" <text>.\n\n> [!note] Title[^n]\n> Body[^n]\n\n| Header |\n| --- |\n| Cell[^n] |\n\nInline ^[inline note].\n\n[^n]: Definition.';
   const doc = dom(f.render(source));
   const links = [...doc.querySelectorAll('#fn1 .obsidian-footnote-backref')];
-  assert.deepEqual(links.map(link => link.textContent), ['↑1', '↑2', '↑3', '↑4', '↑5', '↑6']);
-  assert.equal(links[2].getAttribute('title'), 'Next line with "quoted" <text>.');
-  assert.equal(links[4].getAttribute('title'), 'Body');
+  assert.deepEqual(links.map(link => link.textContent), ['↩₁', '↩₂', '↩₃', '↩₄', '↩₅', '↩₆']);
+  assert.ok(links.every(link => !link.hasAttribute('title')));
   assert.equal(links[4].getAttribute('aria-label'), '5번째 참조 본문으로 이동');
   for (const link of links) assert.ok(doc.getElementById(link.getAttribute('href')!.slice(1)));
-  assert.equal(doc.querySelector('#fn2 .obsidian-footnote-backref')?.textContent, '↑1');
+  assert.equal(doc.querySelector('#fn2 .obsidian-footnote-backref')?.textContent, '↩');
 });
 
 test('partial embed backlinks restart reference order and isolate destinations', async t => {
   const f = await fixture(t, { 'Main.md': '', 'Note.md': '# Before\n\nIntro\n\n# Selected\nText[^n]\n\n[^n]: Note' });
   const doc = dom(f.render('![[Note#Selected]]\n\n![[Note#Selected]]'));
   const links = [...doc.querySelectorAll('.obsidian-footnote-backref')];
-  assert.deepEqual(links.map(link => link.textContent), ['↑1', '↑1']);
+  assert.deepEqual(links.map(link => link.textContent), ['↩', '↩']);
   assert.notEqual(links[0].getAttribute('href'), links[1].getAttribute('href'));
   for (const link of links) assert.ok(doc.getElementById(link.getAttribute('href')!.slice(1)));
 });

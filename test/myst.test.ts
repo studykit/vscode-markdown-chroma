@@ -5,8 +5,18 @@ import { readFileSync } from 'node:fs';
 import { fixture } from './helpers';
 import { extendMystMarkdown } from '../src/myst';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
+import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 
 const dom = (html: string) => new JSDOM(html).window.document;
+
+test('manual footnote numbers and bracketed references match MyST in both rendering paths', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  for (const prefix of ['', '{kbd}`Ctrl`\n\n']) {
+    assertFootnoteNumbers(dom(f.render(prefix + manualFootnoteSource)), ['1', '3']);
+    assertFootnoteNumbers(dom(f.render(prefix + mixedFootnoteSource)), ['2', '4', '1', '5', '3', '2']);
+  }
+});
 
 test('cross-reference guide syntax renders names, numbers, formatting and existing anchors', async t => {
   const f = await fixture(t, { 'Main.md': '', 'assets/preview.svg': '<svg/>' });
@@ -75,7 +85,7 @@ test('MyST code examples stay literal and Obsidian remains compatible', async t 
   assert.equal(doc.querySelector('mark')?.textContent, '강조');
   assert.ok(doc.querySelector('a.obsidian-link'));
   assert.ok(doc.querySelector('.obsidian-footnotes strong'));
-  assert.doesNotMatch(doc.body.textContent ?? '', /↩/);
+  assert.doesNotMatch(doc.body.textContent ?? '', /↑/);
 });
 
 test('cached MyST includes read dirty buffers and block unsafe or cyclic sources', async t => {
@@ -125,13 +135,13 @@ test('invalid or cyclic optional configuration reports a readable error and rend
 });
 
 
-test('MyST footnotes link to every reference in reference order and sentence tooltips', async t => {
+test('MyST footnotes link to every reference in reference order without tooltips', async t => {
   const f = await fixture(t, { 'Main.md': '' });
   extendMystMarkdown(f.md, f.host);
   const doc = dom(f.render('---\ntitle: Sample\n---\n\n{kbd}`Ctrl`\n\nFirst[^n] and again[^n].\n\nSecond[^n] with **bold**.\n\n[^n]: Definition.'));
   const links = [...doc.querySelectorAll('.obsidian-footnote-backref')];
-  assert.deepEqual(links.map(link => link.textContent), ['↑1', '↑2', '↑3']);
-  assert.equal(links[2].getAttribute('title'), 'Second with bold.');
+  assert.deepEqual(links.map(link => link.textContent), ['↩₁', '↩₂', '↩₃']);
+  assert.ok(links.every(link => !link.hasAttribute('title')));
   assert.equal(new Set(links.map(link => link.getAttribute('href'))).size, 3);
   for (const link of links) assert.ok(doc.getElementById(link.getAttribute('href')!.slice(1)));
 });

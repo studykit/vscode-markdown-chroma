@@ -1,5 +1,5 @@
 import GithubSlugger from 'github-slugger';
-import { footnoteBacklinks } from './footnotes';
+import { footnoteBacklinks, assignFootnoteNumbers } from './footnotes';
 import type MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import { mystParse } from 'myst-parser';
@@ -151,19 +151,13 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     const allNodes: Node[] = [];
     walk(tree, node => allNodes.push(node));
     const definitions = allNodes.filter(node => node.type === 'footnoteDefinition');
-    const footnoteNumbers = new Map<string, number>();
+    const footnoteNumbers = assignFootnoteNumbers(allNodes.filter(node => node.type === 'footnoteReference').map(node => node.identifier));
     const footnoteReferences = new Map<string, Node[]>();
     allNodes.filter(node => node.type === 'footnoteReference').forEach(node => {
-      if (!footnoteNumbers.has(node.identifier)) footnoteNumbers.set(node.identifier, footnoteNumbers.size + 1);
       const references = footnoteReferences.get(node.identifier) ?? [];
       node._footnoteAnchor = `myst-fnref-${node.identifier}${references.length ? `:${references.length}` : ''}`;
       references.push(node);
       footnoteReferences.set(node.identifier, references);
-    });
-    const referenceExcerpts = new WeakMap<Node, string>();
-    walk(tree, parent => {
-      if (!['paragraph', 'heading'].includes(parent.type)) return;
-      walk(parent, child => { if (child.type === 'footnoteReference') referenceExcerpts.set(child, text(parent).trim()); });
     });
     const bibliography = new Map<string, any>();
     const bibFiles = [...(Array.isArray(metadata.bibliography) ? metadata.bibliography : metadata.bibliography ? [metadata.bibliography] : []), ...allNodes.filter(node => node.type === 'bibliography').flatMap(node => node.files ?? [])];
@@ -282,7 +276,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         }
         case 'footnoteReference': {
           const number = footnoteNumbers.get(node.identifier);
-          return `<sup class="footnote-ref"><a id="${escape(node._footnoteAnchor)}" href="#myst-fn-${escape(node.identifier)}">${number ?? '?'}</a></sup>`;
+          return `<sup class="footnote-ref"><a id="${escape(node._footnoteAnchor)}" href="#myst-fn-${escape(node.identifier)}">[${number ?? '?'}]</a></sup>`;
         }
         case 'citeGroup': return children();
         case 'cite': {
@@ -307,7 +301,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     };
     const content = tree.children?.map(child => renderMapped(child as Node)).join('') ?? '';
     const footnotes = definitions.length ? `<section class="footnotes obsidian-footnotes"><ol class="obsidian-footnotes-list">${definitions.map(node => {
-      const backlinks = footnoteBacklinks((footnoteReferences.get(node.identifier) ?? []).map(reference => ({ anchor: reference._footnoteAnchor, line: reference.position?.start.line, excerpt: referenceExcerpts.get(reference) ?? '' })));
+      const backlinks = footnoteBacklinks((footnoteReferences.get(node.identifier) ?? []).map(reference => ({ anchor: reference._footnoteAnchor })));
       return `<li class="footnote-item" id="myst-fn-${escape(node.identifier)}"><span class="obsidian-footnote-number">${footnoteNumbers.get(node.identifier) ?? '?'}.</span><div class="obsidian-footnote-content">${node.children?.map(child => render(child as Node)).join('') ?? ''}${backlinks}</div></li>`;
     }).join('')}</ol></section>` : '';
 
