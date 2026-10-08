@@ -1,4 +1,4 @@
-# Obsidian & MyST Markdown Preview
+# Markdown Chroma
 
 VS Code의 기본 Markdown Preview에서 Obsidian과 MyST 문법을 함께 렌더링하는 확장입니다.
 
@@ -22,7 +22,7 @@ VS Code의 기본 Markdown Preview에서 Obsidian과 MyST 문법을 함께 렌�
 | Grids, Tabs & Cards | 반응형 grid, 전환 가능한 tabs, cards |
 | Glossaries, Terms & Index | glossary/term 참조와 index 메타데이터 |
 
-예제: [`examples/myst/index.md`](examples/myst/index.md), [`layout.md`](examples/myst/layout.md), [`syntax.md`](examples/myst/syntax.md). 공식 [Authoring 문서](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), [figures](https://mystmd.org/guide/figures)를 기준으로 합니다.
+예제: [`examples/myst/index.md`](examples/myst/index.md), [`layout.md`](examples/myst/layout.md), [`syntax.md`](examples/myst/syntax.md), [`glossary.md`](examples/myst/glossary.md). Glossary 예제에서는 여러 용어집, `{term}` 참조, 표시 이름 변경, 정의보다 먼저 나오는 참조를 확인할 수 있습니다. 공식 [Authoring 문서](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), [figures](https://mystmd.org/guide/figures)를 기준으로 합니다.
 
 Preview는 로컬 파일을 표시하며 코드를 실행하지 않습니다. DOI·외부 프로젝트의 자동 조회, 사용자 프로젝트 플러그인, Jupyter 실행, `.tex` 문서 변환, PDF/EPS/TIFF 이미지 변환과 PDF·Word 출판은 MyST CLI의 빌드 기능에 해당하며 이 Preview에서 실행하지 않습니다. 외부 iframe은 기본 Preview의 보안 정책에 맞춰 링크로 표시합니다. 지원하지 않거나 잘못된 directive는 원문 대신 오류 안내를 표시합니다. Frontmatter와 Obsidian 각주는 기존 표시 방식을 유지합니다.
 
@@ -30,7 +30,7 @@ Preview는 로컬 파일을 표시하며 코드를 실행하지 않습니다. DO
 
 1. Obsidian vault 폴더를 VS Code에서 엽니다.
 2. Markdown 노트를 엽니다.
-3. `Markdown: Open Preview to the Side` 또는 `Obsidian Markdown: Open Preview to the Side` 명령을 실행합니다. macOS에서는 `Cmd+K V`, Windows/Linux에서는 `Ctrl+K V`를 사용할 수 있습니다.
+3. `Markdown: Open Preview to the Side` 또는 `Markdown Chroma: Open Preview to the Side` 명령을 실행합니다. macOS에서는 `Cmd+K V`, Windows/Linux에서는 `Ctrl+K V`를 사용할 수 있습니다.
 
 별도의 미리보기 편집기를 만들지 않으므로 VS Code의 기본 Markdown 테마, 미리보기 탐색, 스크롤 동기화와 함께 사용할 수 있습니다.
 
@@ -114,6 +114,8 @@ Obsidian과 같은 `.callout`, `.callout-title`, `.callout-icon`, `.callout-cont
 
 ## Vault와 설정
 
+기존 설정과 단축키의 호환을 위해 설정 키와 명령 ID는 `obsidianMarkdown.*`을 유지합니다.
+
 열린 문서에서 가장 가까운 `.obsidian` 폴더의 부모를 vault 루트로 사용합니다. 없으면 해당 VS Code workspace 폴더를 사용합니다. 파일만 단독으로 연 경우 `.obsidian`을 찾거나 파일의 폴더를 사용합니다.
 
 | 설정 | 기본값 | 의미 |
@@ -125,7 +127,7 @@ Obsidian과 같은 `.callout`, `.callout-title`, `.callout-icon`, `.callout-cont
 
 `folder/Note`는 vault 루트 기준, `./Note`와 `../Note`는 현재 문서 기준입니다. 파일명만 있으면 같은 폴더, vault 루트, vault 내 유일한 파일명·별칭 순서로 찾습니다. 대상이 여러 개이면 모호한 링크로 표시하므로 폴더 경로를 지정하세요. 존재하지 않는 노트를 자동으로 만들지는 않습니다.
 
-열린 노트의 저장 전 변경 사항도 임베드에 반영됩니다. 파일 생성·변경·삭제와 설정 변경 시 미리보기를 갱신합니다. 수동 재색인은 `Obsidian Markdown: Refresh Vault Index` 명령으로 실행합니다. `.git`, `.obsidian`, `node_modules`, 숨김 파일·폴더와 심볼릭 링크는 색인에서 제외합니다.
+열린 노트의 저장 전 변경 사항도 임베드에 반영됩니다. 파일 생성·변경·삭제와 설정 변경 시 미리보기를 갱신합니다. 수동 재색인은 `Markdown Chroma: Refresh Vault Index` 명령으로 실행합니다. `.git`, `.obsidian`, `node_modules`, 숨김 파일·폴더와 심볼릭 링크는 색인에서 제외합니다.
 
 ## 현재 범위
 
@@ -153,7 +155,7 @@ F5로 Extension Development Host를 실행하면 `examples/vault`가 열립니�
 VSCODE_EXECUTABLE_PATH='/Applications/Visual Studio Code.app/Contents/MacOS/Code' npm run test:integration
 ```
 
-VSIX는 `artifacts/obsidian-markdown-0.1.0.vsix`에 생성됩니다. VS Code의 `Extensions: Install from VSIX...` 명령으로 설치할 수 있습니다.
+VSIX는 `artifacts/markdown-chroma-0.1.0.vsix`에 생성됩니다. VS Code의 `Extensions: Install from VSIX...` 명령으로 설치할 수 있습니다.
 
 파싱 규칙은 파일을 읽지 않고 토큰을 만듭니다. 렌더링 시 VS Code가 제공하는 현재 문서 URI를 사용해 링크와 임베드를 해석하므로 토큰 캐시와 다중 문서 미리보기에서도 기준 문서가 유지됩니다.
 

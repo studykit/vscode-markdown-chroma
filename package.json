@@ -1,6 +1,6 @@
 {
-  "name": "obsidian-markdown",
-  "displayName": "Obsidian & MyST Markdown Preview",
+  "name": "markdown-chroma",
+  "displayName": "Markdown Chroma",
   "description": "Render Obsidian and MyST syntax in VS Code's built-in Markdown preview, without a MyST project.",
   "version": "0.1.0",
   "publisher": "studykit",
@@ -44,16 +44,16 @@
       {
         "command": "obsidianMarkdown.showPreview",
         "title": "Open Preview to the Side",
-        "category": "Obsidian Markdown"
+        "category": "Markdown Chroma"
       },
       {
         "command": "obsidianMarkdown.refreshVault",
         "title": "Refresh Vault Index",
-        "category": "Obsidian Markdown"
+        "category": "Markdown Chroma"
       }
     ],
     "configuration": {
-      "title": "Obsidian Markdown",
+      "title": "Markdown Chroma",
       "properties": {
         "obsidianMarkdown.vaultRoot": {
           "type": "string",
@@ -80,7 +80,7 @@
     "test:integration": "npm run build && node scripts/test-integration.mjs",
     "check": "npm run typecheck && npm test",
     "vscode:prepublish": "npm run build",
-    "package": "mkdir -p artifacts && vsce package --no-dependencies --no-rewrite-relative-links --allow-missing-repository --out artifacts/obsidian-markdown-0.1.0.vsix"
+    "package": "mkdir -p artifacts && vsce package --no-dependencies --no-rewrite-relative-links --allow-missing-repository --out artifacts/markdown-chroma-0.1.0.vsix"
   },
   "dependencies": {
     "@citation-js/core": "0.9.0",

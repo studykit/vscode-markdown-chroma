@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const data = await mkdtemp(path.join(tmpdir(), 'obsidian-markdown-vscode-'));
+const data = await mkdtemp(path.join(tmpdir(), 'markdown-chroma-vscode-'));
 const executable = process.env.VSCODE_EXECUTABLE_PATH;
 if (!executable) throw new Error('Set VSCODE_EXECUTABLE_PATH to an installed VS Code executable. This test does not download VS Code.');
 const workspace = path.join(data, 'preview.code-workspace');

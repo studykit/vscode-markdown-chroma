@@ -9,7 +9,7 @@ import { extendObsidianMarkdown } from '../src/markdown';
 import type { PreviewHost, RenderEnvironment } from '../src/types';
 
 export async function fixture(t: TestContext, files: Record<string, string>, dirty = new Map<string, string>()) {
-  const root = await fs.mkdtemp(path.join(tmpdir(), 'obsidian-markdown-unit-'));
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'markdown-chroma-unit-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   for (const [name, contents] of Object.entries(files)) {
     const file = path.join(root, name);

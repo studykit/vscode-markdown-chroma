@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { JSDOM } from 'jsdom';
 
 export async function run(): Promise<void> {
-  const extension = vscode.extensions.getExtension('studykit.obsidian-markdown');
+  const extension = vscode.extensions.getExtension('studykit.markdown-chroma');
   assert.ok(extension, 'Development extension is installed');
   await extension.activate();
   const root = vscode.workspace.workspaceFolders![0].uri.fsPath;

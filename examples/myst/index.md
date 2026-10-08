@@ -10,6 +10,8 @@ description: 기본 Markdown Preview에서 프로젝트 설정 없이 렌더링�
 VS Code 기본 Markdown Preview에서 MyST 문법을 확인합니다. {abbr}`AST (Abstract Syntax Tree)`,
 H{sub}`2`O, x{sup}`2`, {kbd}`Ctrl + Enter` 같은 인라인 역할도 지원합니다.
 
+용어 정의와 참조는 [Glossary 전용 예제](glossary.md)에서 확인할 수 있습니다.
+
 % 이 MyST 주석은 렌더링되지 않아야 합니다.
 
 ## 중첩·접기와 directive 옵션

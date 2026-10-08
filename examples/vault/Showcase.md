@@ -7,7 +7,7 @@ tags:
 related: "[[notes/Linked note]]"
 ---
 
-# Obsidian Markdown Preview
+# Markdown Chroma — Obsidian 예제
 
 VS Code의 **기본 Markdown Preview**에서 Obsidian 문법을 확인하는 예제입니다.
 
