@@ -9,7 +9,7 @@ interface Definition {
 interface Entry {
   source: string;
   line?: number;
-  count: number;
+  references: { line?: number; excerpt: string }[];
 }
 
 interface Footnotes {
@@ -21,11 +21,18 @@ interface Footnotes {
 interface Environment {
   obsidianFootnotes?: Footnotes;
   docId?: string;
+  footnoteLineOffset?: number;
   footnotes?: unknown;
 }
 
 const newFootnotes = (): Footnotes => ({ definitions: new Map(), entries: [], labels: new Map() });
 const footnotesFor = (env: Environment): Footnotes => env.obsidianFootnotes ??= newFootnotes();
+
+/** Compact backlinks numbered by reference order within each footnote. */
+export function footnoteBacklinks(references: { anchor: string; line?: number; excerpt: string }[]): string {
+  const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!));
+  return `<span class="obsidian-footnote-backlinks">${references.map((reference, index) => `<a class="obsidian-footnote-backref" href="#${escape(reference.anchor)}" title="${escape(reference.excerpt)}" aria-label="${index + 1}번째 참조 본문으로 이동">↑${index + 1}</a>`).join(' ')}</span>`;
+}
 
 /** Obsidian reference and inline footnotes, with no separate footnote dependency. */
 export function installFootnotes(md: MarkdownIt): void {
@@ -95,11 +102,13 @@ export function installFootnotes(md: MarkdownIt): void {
         if (notes.entries.length >= 1000) return false;
         id = notes.entries.length;
         const definition = label === undefined ? undefined : notes.definitions.get(label);
-        notes.entries.push({ source: source ?? definition!.source, line: definition?.line, count: 0 });
+        notes.entries.push({ source: source ?? definition!.source, line: definition?.line, references: [] });
         if (label !== undefined) notes.labels.set(label, id);
       }
       const token = state.push('obsidian_footnote_reference', '', 0);
-      token.meta = { id, subId: notes.entries[id].count++ };
+      const entry = notes.entries[id];
+      token.meta = { id, subId: entry.references.length, offset: start };
+      entry.references.push({ excerpt: '' });
     }
     state.pos = end;
     return true;
@@ -107,13 +116,28 @@ export function installFootnotes(md: MarkdownIt): void {
 
   md.core.ruler.after('inline', 'obsidian_footnote_tail', state => {
     const notes = footnotesFor(state.env);
+    const mapReferences = (tokens: Token[], base?: number) => {
+      let blockLine = base;
+      for (const parent of tokens) {
+        if (parent.map) blockLine = parent.map[0];
+        if (parent.type !== 'inline') continue;
+        for (const token of parent.children ?? []) {
+          if (token.type !== 'obsidian_footnote_reference') continue;
+          const offset = parent.content.slice(0, token.meta.offset).split('\n').length - 1;
+          const line = blockLine === undefined ? undefined : blockLine + offset + 1 + (state.env.footnoteLineOffset ?? 0);
+          const excerpt = parent.content.split('\n')[offset].replace(/\[\^[^\]]+\]|\^\[([^\]]*)\]/g, '$1').trim();
+          notes.entries[token.meta.id].references[token.meta.subId] = { line, excerpt };
+        }
+      }
+    };
+    mapReferences(state.tokens);
     state.tokens = state.tokens.filter(token => token.type !== 'obsidian_footnote_definition');
     if (!notes.entries.length) return;
     state.tokens.push(new state.Token('obsidian_footnotes_open', '', 1));
     for (let id = 0; id < notes.entries.length; id++) {
       const entry = notes.entries[id];
       const open = new state.Token('obsidian_footnote_open', '', 1);
-      open.meta = { id };
+      open.meta = { id, entry };
       state.tokens.push(open);
       const body: Token[] = [];
       md.block.parse(entry.source, md, state.env, body);
@@ -124,8 +148,11 @@ export function installFootnotes(md: MarkdownIt): void {
         }
         if (token.map) token.map = entry.line === undefined ? null : [token.map[0] + entry.line, token.map[1] + entry.line];
       }
+      mapReferences(body, entry.line ?? (entry.references[0]?.line === undefined ? undefined : entry.references[0].line - 1 - (state.env.footnoteLineOffset ?? 0)));
       state.tokens.push(...body.filter(token => token.type !== 'obsidian_footnote_definition'));
-      state.tokens.push(new state.Token('obsidian_footnote_close', '', -1));
+      const close = new state.Token('obsidian_footnote_close', '', -1);
+      close.meta = { id, entry };
+      state.tokens.push(close);
     }
     state.tokens.push(new state.Token('obsidian_footnotes_close', '', -1));
   });
@@ -145,7 +172,12 @@ export function installFootnotes(md: MarkdownIt): void {
     const token = tokens[index];
     const id = escape(anchor(token, env));
     const number = token.meta.id + 1;
-    return `<li id="fn${id}" class="footnote-item"><a class="obsidian-footnote-number" href="#fnref${id}" aria-label="각주 ${number}의 본문으로 돌아가기">${number}.</a><div class="obsidian-footnote-content">`;
+    return `<li id="fn${id}" class="footnote-item"><span class="obsidian-footnote-number">${number}.</span><div class="obsidian-footnote-content">`;
   };
-  md.renderer.rules.obsidian_footnote_close = () => '</div></li>\n';
+  md.renderer.rules.obsidian_footnote_close = (tokens, index, _options, env: Environment) => {
+    const token = tokens[index];
+    const id = anchor(token, env);
+    const references = (token.meta.entry as Entry).references.map((reference, subId) => ({ ...reference, anchor: `fnref${id}${subId ? `:${subId}` : ''}` }));
+    return `${footnoteBacklinks(references)}</div></li>\n`;
+  };
 }

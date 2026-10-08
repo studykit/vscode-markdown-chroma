@@ -1,8 +1,9 @@
 import GithubSlugger from 'github-slugger';
+import { footnoteBacklinks } from './footnotes';
 import type MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import { mystParse } from 'myst-parser';
-import { basicTransformations, glossaryTransform, abbreviationTransform, ReferenceState, enumerateTargetsTransform, resolveReferencesTransform } from 'myst-transforms';
+import { basicTransformations, glossaryTransform, abbreviationTransform, ReferenceState, enumerateTargetsTransform, resolveLinksAndCitationsTransform, resolveReferencesTransform } from 'myst-transforms';
 import { gridDirectives } from 'myst-ext-grid';
 import { cardDirective } from 'myst-ext-card';
 import { tabDirectives } from 'myst-ext-tabs';
@@ -80,7 +81,8 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     // Ordinary Markdown/Obsidian continues through the native token pipeline.
     // Inspect actual tokens so syntax examples in code remain literal.
     const hasMyst = native.some(token => (token.type === 'fence' && /^\{[\w:-]+(?:\s|\})/.test(token.info)) ||
-      (token.type === 'inline' && /(?:^|\n)\s*(?::{3,}|:::\{|\+\+\+|\([\w:-]+\)=|%\s|:\s)|\{[\w:-]+(?:\s[^}]*?)?\}`|\[\]\([\w:-]+\)/.test(token.content)));
+      (token.type === 'inline' && /(?:^|\n)\s*(?::{3,}|:::\{|\+\+\+|\([\w:-]+\)=|%\s|:\s)|\{[\w:-]+(?:\s[^}]*?)?\}`|\[\]\(#[^\s)]+\)|\[\]\([\w:-]+\)/.test(token.content)) ||
+      (token.type === 'inline' && token.children?.some(child => child.type === 'text' && /(?:^|\s)@[\w:-]+/.test(child.content))));
     if (!hasMyst && !mystConfiguration(host, env).root) return native;
     const { body, header, metadata } = stripHeader(source);
     // Resolve references and include files once at render time, so cached tokens
@@ -141,12 +143,28 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     walk(tree, node => { if (node.type === 'heading' && node.implicit) node.html_id = slugger.slug(text(node)); });
     const state = new ReferenceState(file, { vfile, frontmatter: { ...metadata, numbering: validateNumbering(metadata.numbering, { property: 'numbering', messages: {} }) } });
     enumerateTargetsTransform(tree, { state });
+    // The project CLI marks unmatched bibliography shorthand before resolving
+    // it against local targets. Standalone previews have no citation pipeline.
+    walk(tree, node => { if (node.type === 'cite' && state.getTarget(node.identifier)) node.error = true; });
+    resolveLinksAndCitationsTransform(tree, { state });
     resolveReferencesTransform(tree, vfile, { state });
     const allNodes: Node[] = [];
     walk(tree, node => allNodes.push(node));
     const definitions = allNodes.filter(node => node.type === 'footnoteDefinition');
     const footnoteNumbers = new Map<string, number>();
-    allNodes.filter(node => node.type === 'footnoteReference').forEach(node => { if (!footnoteNumbers.has(node.identifier)) footnoteNumbers.set(node.identifier, footnoteNumbers.size + 1); });
+    const footnoteReferences = new Map<string, Node[]>();
+    allNodes.filter(node => node.type === 'footnoteReference').forEach(node => {
+      if (!footnoteNumbers.has(node.identifier)) footnoteNumbers.set(node.identifier, footnoteNumbers.size + 1);
+      const references = footnoteReferences.get(node.identifier) ?? [];
+      node._footnoteAnchor = `myst-fnref-${node.identifier}${references.length ? `:${references.length}` : ''}`;
+      references.push(node);
+      footnoteReferences.set(node.identifier, references);
+    });
+    const referenceExcerpts = new WeakMap<Node, string>();
+    walk(tree, parent => {
+      if (!['paragraph', 'heading'].includes(parent.type)) return;
+      walk(parent, child => { if (child.type === 'footnoteReference') referenceExcerpts.set(child, text(parent).trim()); });
+    });
     const bibliography = new Map<string, any>();
     const bibFiles = [...(Array.isArray(metadata.bibliography) ? metadata.bibliography : metadata.bibliography ? [metadata.bibliography] : []), ...allNodes.filter(node => node.type === 'bibliography').flatMap(node => node.files ?? [])];
     for (const bibFile of bibFiles) {
@@ -180,7 +198,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         case 'code': {
           const token = new TokenType('fence', 'code', 0); token.info = node.lang ?? ''; token.content = node.value ?? '';
           const code = md.renderer.rules.fence?.([token], 0, md.options, environment, md.renderer) ?? `<pre><code>${escape(node.value)}</code></pre>`;
-          return `<div class="myst-code${node.showLineNumbers ? ' has-line-numbers' : ''}"${node.filename ? ` data-filename="${escape(node.filename)}"` : ''}>${code}</div>`;
+          return `<div${node.html_id || node.identifier ? ` id="${escape(node.html_id || node.identifier)}"` : ''} class="myst-code${node.showLineNumbers ? ' has-line-numbers' : ''}"${node.filename ? ` data-filename="${escape(node.filename)}"` : ''}>${code}</div>`;
         }
         case 'html': return md.options.html ? node.value ?? '' : escape(node.value);
         case 'comment': case 'mystTarget': case 'indexEntry': case 'footnoteDefinition': return '';
@@ -191,7 +209,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
           const source = start && end ? body.split('\n').slice(start - 1, end).join('\n') : '';
           return /^\s*>\s*\[!/.test(source) ? nativeRender(source, environment) : tag('blockquote');
         }
-        case 'list': return tag(node.ordered ? 'ol' : 'ul', node.ordered && node.start ? ` start="${Number(node.start)}"` : '');
+        case 'list': return tag(node.ordered ? 'ol' : 'ul', attr(node) + (node.ordered && node.start ? ` start="${Number(node.start)}"` : ''));
         case 'listItem': return `<li>${node.checked == null ? '' : `<input type="checkbox" disabled${node.checked ? ' checked' : ''}> `}${children()}</li>`;
         case 'definitionList': return tag('dl');
         case 'definitionTerm': return tag('dt');
@@ -264,7 +282,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         }
         case 'footnoteReference': {
           const number = footnoteNumbers.get(node.identifier);
-          return `<sup class="footnote-ref"><a id="myst-fnref-${escape(node.identifier)}" href="#myst-fn-${escape(node.identifier)}">${number ?? '?'}</a></sup>`;
+          return `<sup class="footnote-ref"><a id="${escape(node._footnoteAnchor)}" href="#myst-fn-${escape(node.identifier)}">${number ?? '?'}</a></sup>`;
         }
         case 'citeGroup': return children();
         case 'cite': {
@@ -288,7 +306,11 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       return `<div${line ? ` class="code-line" data-line="${line - 1}"` : ''}>${render(node)}</div>`;
     };
     const content = tree.children?.map(child => renderMapped(child as Node)).join('') ?? '';
-    const footnotes = definitions.length ? `<section class="footnotes obsidian-footnotes"><ol>${definitions.map(node => `<li class="footnote-item" id="myst-fn-${escape(node.identifier)}"><a class="obsidian-footnote-number" href="#myst-fnref-${escape(node.identifier)}">${footnoteNumbers.get(node.identifier) ?? '?'}</a>${node.children?.map(child => render(child as Node)).join('') ?? ''}</li>`).join('')}</ol></section>` : '';
+    const footnotes = definitions.length ? `<section class="footnotes obsidian-footnotes"><ol class="obsidian-footnotes-list">${definitions.map(node => {
+      const backlinks = footnoteBacklinks((footnoteReferences.get(node.identifier) ?? []).map(reference => ({ anchor: reference._footnoteAnchor, line: reference.position?.start.line, excerpt: referenceExcerpts.get(reference) ?? '' })));
+      return `<li class="footnote-item" id="myst-fn-${escape(node.identifier)}"><span class="obsidian-footnote-number">${footnoteNumbers.get(node.identifier) ?? '?'}.</span><div class="obsidian-footnote-content">${node.children?.map(child => render(child as Node)).join('') ?? ''}${backlinks}</div></li>`;
+    }).join('')}</ol></section>` : '';
+
     return (config.error ? error(config.error) : '') + content + footnotes;
   };
   return md;

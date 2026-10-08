@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as vscode from 'vscode';
 import { JSDOM } from 'jsdom';
+import { crossReferenceSource, assertCrossReferences } from './cross-references';
 
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension('studykit.markdown-chroma');
@@ -32,12 +33,24 @@ export async function run(): Promise<void> {
   assert.doesNotMatch(html, /Embedded file not found/);
   assert.match(html, /footnote-item/);
   assert.equal((html.match(/class="footnotes obsidian-footnotes"/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /↩|footnote-backref/);
-  assert.match(html, /class="obsidian-footnote-number" href="#fnref1"/);
+  assert.doesNotMatch(html, /↩/);
+  assert.match(html, /class="obsidian-footnote-backref" href="#fnref1"[^>]*>↑\d+<\/a>/);
   assert.match(html, /obsidian-block-checklist/);
   console.log('PASS: built-in markdown.api.render loads the plugin and renders all showcase syntax');
 
   const document = new JSDOM(html).window.document;
+  const footnoteDocument = {
+    uri: showcase.uri, version: -1,
+    getText: () => '# Title\n\nFirst[^n] and again[^n].\nNext[^n] with "quotes".\n\n[^n]: Note.'
+  };
+  const footnoteHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', footnoteDocument))!;
+  const footnoteDom = new JSDOM(footnoteHtml).window.document;
+  const backrefs = [...footnoteDom.querySelectorAll('.obsidian-footnote-backref')];
+  assert.deepEqual(backrefs.map(link => link.textContent), ['↑1', '↑2', '↑3']);
+  assert.equal(backrefs[2].getAttribute('title'), 'Next with "quotes".');
+  for (const link of backrefs) assert.ok(footnoteDom.getElementById(link.getAttribute('href')!.slice(1)));
+  console.log('PASS: actual Markdown renderer produces numbered backlinks, hover sentences and unique targets');
+
   const audio = document.querySelector('audio.obsidian-media');
   assert.ok(audio);
   assert.ok(audio.hasAttribute('controls'));
@@ -115,6 +128,13 @@ export async function run(): Promise<void> {
   console.log('PASS: the built-in Markdown preview opens in an actual VS Code window');
 
   const mystRoot = vscode.workspace.workspaceFolders!.find(folder => path.basename(folder.uri.fsPath) === 'myst')!.uri.fsPath;
+  const crossReferences = {
+    uri: vscode.Uri.file(path.join(mystRoot, 'cross-references-test.md')), version: -1,
+    getText: () => crossReferenceSource
+  };
+  const crossReferenceHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', crossReferences))!;
+  assertCrossReferences(new JSDOM(crossReferenceHtml).window.document);
+  console.log('PASS: actual VS Code renderer resolves MyST reference names, numbers, formatting and all anchors');
   for (const name of ['index', 'layout', 'syntax']) {
     const doc = await vscode.workspace.openTextDocument(path.join(mystRoot, `${name}.md`));
     const html = (await vscode.commands.executeCommand<string>('markdown.api.render', doc))!;

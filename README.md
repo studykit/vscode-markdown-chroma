@@ -13,7 +13,7 @@ VS Code의 기본 Markdown Preview에서 Obsidian과 MyST 문법을 함께 렌�
 | Images, Figures & Videos | 이미지 크기·정렬, 캡션·번호·참조, MP4, 로컬 이미지 wildcard |
 | Math & Equations | KaTeX 수식, 레이블과 식 참조 |
 | Tables / Code | 표, list-table, 코드·캡션 |
-| Cross-references | 문서 내 레이블과 번호 참조; 문서 링크는 기본 Markdown 탐색 |
+| Cross-references | 문서 내 `[](#label)`·`@label`·`{ref}`·`{numref}`·`{eq}`, 자동 문구와 번호·`{name}`·`{number}`·`%s` 치환; 문서 링크는 기본 Markdown 탐색, 내용 hover 팝업은 미지원 |
 | Embed & Include Content | 로컬 include/literalinclude, 레이블 embed, 저장된 Jupyter notebook 출력 |
 | Citations & Bibliography | 문서 frontmatter의 `bibliography` 또는 bibliography directive의 로컬 BibTeX 파일 |
 | Proofs / Exercises | 정리·증명·연습문제·해답과 번호 |
@@ -47,7 +47,7 @@ Preview는 로컬 파일을 표시하며 코드를 실행하지 않습니다. DO
 | Callout | `> [!note] 제목`, `[!warning]-`, `[!tip]+`, 중첩 Callout |
 | 강조·색상 | `==강조==`, `==🔴빨강==`, `==🟢초록==` 등 6색 |
 | 주석 | `%%인라인 주석%%`, 여러 줄의 `%%…%%` |
-| 각주 | 자체 파서로 `[^id]` + `[^id]: 설명`, `^[인라인 각주]` 지원. 각주 번호를 클릭하면 본문으로 이동 |
+| 각주 | 자체 파서로 `[^id]` + `[^id]: 설명`, `^[인라인 각주]` 지원. 각주 끝의 `↑1 ↑2 …`를 클릭하면 각주별 참조 순서에 따라 해당 본문으로 이동; 마우스를 올리면 본문 문장 표시 |
 | 작업 목록 | `- [ ]`, `- [x]`, `- [?]`, `- [-]` |
 | 태그 | `#태그`, `#분류/하위분류` |
 | Properties | 파일 맨 위 YAML frontmatter는 VS Code 기본 렌더러로 표시 |

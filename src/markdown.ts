@@ -110,10 +110,12 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
       return errorHtml(reference, 'Preview embed limit reached.', true);
     }
     let selected = source;
+    let footnoteLineOffset = 0;
     if (reference.fragment) {
       const section = findSection(md, source, reference.fragment);
       if (!section) return errorHtml(reference, 'Embedded heading or block not found.', true);
       selected = sectionSource(source, section, md);
+      footnoteLineOffset = section.start;
     }
     const prefix = `obsidian-embed-${current.budget.count}-`;
     const slugger = new GithubSlugger();
@@ -121,7 +123,7 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
       ...env, currentDocument: host.documentUri(resolution.path), previewDocument: env.previewDocument ?? env.currentDocument, docId: prefix,
       slugifier: { add: title => ({ value: slugger.slug(title) }) },
       obsidian: { stack: [...current.stack, identity], budget: current.budget, prefix },
-      obsidianSlugger: undefined, footnotes: undefined
+      obsidianSlugger: undefined, footnotes: undefined, footnoteLineOffset
     };
     const tokens = md.parse(selected, child);
     // Embedded lines belong to another file, not to the parent editor's scroll map.
@@ -229,6 +231,7 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
       titleOpen.meta = titleClose.meta = metadata;
       title.content = marker[3] ?? identifier.charAt(0).toUpperCase() + identifier.slice(1);
       title.children = [];
+      title.map = inline.map ? [inline.map[0], inline.map[0] + 1] : null;
       const body = firstLineEnd < 0 ? '' : inline.content.slice(firstLineEnd + 1);
       const replacement = [titleOpen, title, titleClose];
       if (body) {

@@ -4,8 +4,25 @@ import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
 import { fixture } from './helpers';
 import { extendMystMarkdown } from '../src/myst';
+import { crossReferenceSource, assertCrossReferences } from './cross-references';
 
 const dom = (html: string) => new JSDOM(html).window.document;
+
+test('cross-reference guide syntax renders names, numbers, formatting and existing anchors', async t => {
+  const f = await fixture(t, { 'Main.md': '', 'assets/preview.svg': '<svg/>' });
+  extendMystMarkdown(f.md, f.host);
+  assertCrossReferences(dom(f.render(crossReferenceSource)));
+});
+
+test('implicit heading references activate MyST without a project or directive', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  for (const reference of ['@a-heading', '[](#a-heading)']) {
+    const doc = dom(f.render(`## A heading\n\n${reference}`));
+    assert.equal(doc.querySelector('a[href="#a-heading"]')?.textContent, 'A heading');
+    assert.ok(doc.getElementById('a-heading'));
+  }
+});
 
 test('official MyST directives and roles render in a standalone Markdown file', async t => {
   const f = await fixture(t, { 'Main.md': '', 'Note.md': 'linked' });
@@ -105,4 +122,16 @@ test('invalid or cyclic optional configuration reports a readable error and rend
   doc = dom(f.render(source));
   assert.ok(doc.querySelector('.myst-error'));
   assert.equal(doc.querySelector('strong')?.textContent, 'Body');
+});
+
+
+test('MyST footnotes link to every reference in reference order and sentence tooltips', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  const doc = dom(f.render('---\ntitle: Sample\n---\n\n{kbd}`Ctrl`\n\nFirst[^n] and again[^n].\n\nSecond[^n] with **bold**.\n\n[^n]: Definition.'));
+  const links = [...doc.querySelectorAll('.obsidian-footnote-backref')];
+  assert.deepEqual(links.map(link => link.textContent), ['↑1', '↑2', '↑3']);
+  assert.equal(links[2].getAttribute('title'), 'Second with bold.');
+  assert.equal(new Set(links.map(link => link.getAttribute('href'))).size, 3);
+  for (const link of links) assert.ok(doc.getElementById(link.getAttribute('href')!.slice(1)));
 });

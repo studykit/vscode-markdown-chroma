@@ -73,6 +73,12 @@ mark[data-highlight="purple"] { background: rgba(161, 102, 220, .3); }
 .obsidian-footnote-number:hover, .footnote-ref a:hover { text-decoration: underline; }
 .obsidian-footnote-number:focus-visible, .footnote-ref a:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
 
+.obsidian-footnote-backlinks { display: inline-flex; flex-wrap: wrap; gap: .55em; margin-left: .65em; }
+.obsidian-footnote-content > p:last-of-type:has(+ .obsidian-footnote-backlinks) { display: inline; }
+.obsidian-footnote-backref { text-decoration: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.obsidian-footnote-backref:hover { text-decoration: underline; }
+.obsidian-footnote-backref:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
+
 /* MyST uses the native Markdown preview's font, colors and spacing. */
 .myst-title { font-weight: 600; margin-bottom: .5em; }
 .myst-admonition, .myst-aside { margin: 1em 0; padding: .85em 1em; border-left: 3px solid var(--vscode-textLink-foreground); background: var(--vscode-textBlockQuote-background); border-radius: 4px; }
