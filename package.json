@@ -6,7 +6,8 @@
   "publisher": "studykit",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.90.0",
+    "node": ">=20"
   },
   "categories": [
     "Other"
@@ -22,6 +23,13 @@
     "jupyter-book"
   ],
   "main": "./dist/extension.cjs",
+  "bin": {
+    "markdown-chroma": "./dist/cli.cjs"
+  },
+  "exports": {
+    "./index": "./dist/index.cjs"
+  },
+  "files": ["dist/extension.cjs", "dist/cli.cjs", "dist/index.cjs", "dist/preview.js", "dist/THIRD_PARTY_NOTICES.txt", "dist/katex", "media/preview.css", "docs/CLI-INDEX-SPEC.md", "README.md", "LICENSE"],
   "activationEvents": [
     "onLanguage:markdown"
   ],
@@ -79,6 +87,7 @@
     "test": "npm run build && node --test dist/test/*.test.cjs",
     "test:integration": "npm run build && node scripts/test-integration.mjs",
     "check": "npm run typecheck && npm test",
+    "prepack": "npm run build",
     "vscode:prepublish": "npm run build",
     "package": "mkdir -p artifacts && vsce package --no-dependencies --no-rewrite-relative-links --allow-missing-repository --out artifacts/markdown-chroma-0.1.0.vsix"
   },
@@ -90,6 +99,7 @@
     "lucide": "^1.53.0",
     "markdown-it-mark": "^4.0.0",
     "mermaid": "11.13.0",
+    "myst-common": "1.10.1",
     "myst-ext-button": "0.0.2",
     "myst-ext-card": "1.0.9",
     "myst-ext-exercise": "1.0.10",

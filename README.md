@@ -129,7 +129,45 @@ Obsidian과 같은 `.callout`, `.callout-title`, `.callout-icon`, `.callout-cont
 
 열린 노트의 저장 전 변경 사항도 임베드에 반영됩니다. 파일 생성·변경·삭제와 설정 변경 시 미리보기를 갱신합니다. 수동 재색인은 `Markdown Chroma: Refresh Vault Index` 명령으로 실행합니다. `.git`, `.obsidian`, `node_modules`, 숨김 파일·폴더와 심볼릭 링크는 색인에서 제외합니다.
 
-## 현재 범위
+## CLI 색인과 구조 조회
+
+Node.js 20 이상에서 VS Code와 별도로 CLI를 실행할 수 있습니다. 소스에서 설치할 때는 다음과 같이 빌드하고 npm 패키지를 만듭니다.
+
+```sh
+npm install
+npm pack
+npm install -g ./markdown-chroma-0.1.0.tgz
+markdown-chroma --help
+```
+
+개발 중에는 `npm run build` 후 `node dist/cli.cjs <command>`로 실행할 수 있습니다.
+
+```sh
+markdown-chroma index --root ./notes
+markdown-chroma search --root ./notes --tag project --where '{"status":"draft"}'
+markdown-chroma backlinks guide.md --root ./notes
+markdown-chroma sections guide.md --root ./notes
+markdown-chroma read-section guide.md --root ./notes --id installation --no-children
+markdown-chroma tables --root ./notes
+markdown-chroma images --root ./notes
+markdown-chroma glossaries --root ./notes
+markdown-chroma terms --root ./notes
+markdown-chroma read-term 'AST' 'MyST Markdown' --root ./notes --json
+# 목록에서 받은 전역 ID로 용어와 용어집을 함께 선택합니다.
+markdown-chroma read --root ./notes --id 'glossary.md#term-ast' --id 'syntax.md#glossary-1' --json
+```
+
+파일 인자는 `--root` 기준의 정확한 상대 경로입니다. 루트를 생략하면 현재 디렉터리를 사용하며 `.obsidian/` 설정이나 색인을 읽지 않습니다. 숨김 경로, `node_modules`, `_build`, 심볼릭 링크를 제외한 `.md`·`.markdown` 파일을 색인합니다. 가장 가까운 루트 내부 MyST 설정과 문서 frontmatter를 적용합니다.
+
+목록·검색은 JSON, 읽기는 원본 Markdown을 반환합니다. 읽기에 `--json`을 붙이면 항목 정보와 `content`를 함께 받습니다. 여러 용어·용어집은 요청 순서대로 읽으며, 일부 항목을 찾지 못하면 나머지 결과와 함께 `complete: false` 및 종료 코드 1을 반환합니다. 잘못된 인자는 종료 코드 2입니다. 진단은 stderr에 기록합니다.
+
+색인은 사용자 캐시 디렉터리의 `markdown-chroma` 아래 루트별로 저장하며 `--cache-dir`로 위치를 지정할 수 있습니다. 본문 전체나 AST는 저장하지 않습니다. 조회마다 저장된 파일의 내용 hash를 확인하고 변경된 문서만 다시 파싱합니다. `index --rebuild`는 전체를 다시 파싱합니다. 섹션·용어 읽기의 `--source-hash`는 목록 조회 후 문서가 변경됐는지 검증합니다. 문서·설정·bibliography의 파일별 한도는 2 MiB입니다.
+
+MyST 레이아웃 directive 내부 콘텐츠, 표·이미지, glossary 정의와 `{term}` 참조를 색인합니다. 코드·수식·주석 내부의 예시 링크와 태그는 제외합니다. Obsidian 블록 ID와 `%%…%%` 주석의 특별 처리는 제공하지 않습니다. 외부 표 선언은 `referenceOnly`로 남기며 데이터를 실행하거나 다운로드하지 않습니다. 설치된 MyST 파서가 지원하지 않는 선언에는 진단이 함께 반환됩니다.
+
+CLI와 향후 확장/MCP 연결이 사용할 순수 Node 모듈은 `markdown-chroma/index`로 내보냅니다. 전체 동작은 [CLI 명세](docs/CLI-INDEX-SPEC.md)에 설명돼 있습니다.
+
+## 미리보기의 현재 범위
 
 - VS Code 기본 읽기 미리보기를 확장합니다. 편집기 내부의 Obsidian Live Preview는 포함하지 않습니다.
 - 체크박스는 읽기 전용이고, 태그는 표시만 합니다. 체크박스 수정과 태그 검색은 포함하지 않습니다.

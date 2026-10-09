@@ -2,6 +2,7 @@ node_modules/
 dist/
 artifacts/
 *.vsix
+*.tgz
 *.log
 .DS_Store
 _build/

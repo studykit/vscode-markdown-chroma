@@ -1,9 +1,0 @@
-**
-!package.json
-!README.md
-!LICENSE
-!dist/extension.cjs
-!dist/preview.js
-!dist/THIRD_PARTY_NOTICES.txt
-!media/preview.css
-!dist/katex/**

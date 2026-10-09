@@ -1,5 +1,5 @@
 import { build, context } from 'esbuild';
-import { cp, copyFile, mkdir, readdir, rm, readFile, writeFile } from 'node:fs/promises';
+import { cp, copyFile, mkdir, readdir, rm, readFile, writeFile, chmod } from 'node:fs/promises';
 
 await mkdir('dist/test', { recursive: true });
 for (const file of await readdir('dist/test')) if (file.endsWith('.cjs')) await rm(`dist/test/${file}`);
@@ -11,6 +11,8 @@ const previewBuild = { entryPoints: ['media/preview.js'], outfile: 'dist/preview
 const tests = (await readdir('test')).filter(name => name.endsWith('.test.ts'));
 const builds = [
   { entryPoints: ['src/extension.ts'], outfile: 'dist/extension.cjs' },
+  { entryPoints: ['src/cli.ts'], outfile: 'dist/cli.cjs' },
+  { entryPoints: ['src/index/index.ts'], outfile: 'dist/index.cjs' },
   ...tests.map(name => ({ entryPoints: [`test/${name}`], outfile: `dist/test/${name.replace('.ts', '.cjs')}` })),
   { entryPoints: ['test/integration.ts'], outfile: 'dist/integration.cjs' }
 ].map(options => ({
@@ -24,6 +26,7 @@ if (process.argv.includes('--watch')) {
   for (const options of builds) await (await context(options)).watch();
 } else {
   const results = await Promise.all([build({ ...previewBuild, metafile: true }), ...builds.map(options => build(options))]);
+  await chmod('dist/cli.cjs', 0o755);
   const packages = new Set(['node_modules/katex']);
   for (const result of results) for (const input of Object.keys(result.metafile.inputs)) {
     const matches = [...input.matchAll(/node_modules\/((?:@[^/]+\/)?[^/]+)/g)];
