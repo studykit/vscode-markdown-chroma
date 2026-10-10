@@ -58,7 +58,7 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
     const label = reference.label ?? (reference.target ? reference.target.replace(/\.md$/i, '') + (reference.fragment ? ` › ${reference.fragment.replace(/^\^/, '')}` : '') : reference.fragment.replace(/^\^/, ''));
     if (resolution.status !== 'found') {
       const title = resolution.status === 'ambiguous' ? 'More than one note matches. Use a folder path.'
-        : resolution.status === 'outside' ? 'Link is outside this vault.' : 'File not found in this vault.';
+        : resolution.status === 'outside' ? 'Link is outside this document root.' : 'File not found in this document root.';
       return `<span class="obsidian-link is-unresolved" title="${escape(title)}" data-target="${escape(reference.target)}">${escape(label)}</span>`;
     }
     let anchor = '';
@@ -75,7 +75,7 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
   const embedHtml = (reference: WikiReference, env: RenderEnvironment, block: boolean): string => {
     const resolution = host.resolve(reference.target, sourcePath(env));
     if (resolution.status !== 'found') return errorHtml(reference,
-      resolution.status === 'ambiguous' ? 'Ambiguous embed; specify a folder.' : resolution.status === 'outside' ? 'Embed is outside this vault.' : 'Embedded file not found.', block);
+      resolution.status === 'ambiguous' ? 'Ambiguous embed; specify a folder.' : resolution.status === 'outside' ? 'Embed is outside this document root.' : 'Embedded file not found.', block);
     const extension = path.extname(resolution.path).toLowerCase();
     if (imageExtensions.has(extension)) {
       const image = new TokenClass('image', 'img', 0);

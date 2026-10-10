@@ -95,19 +95,19 @@
     "configuration": {
       "title": "Markdown Chroma",
       "properties": {
-        "obsidianMarkdown.vaultRoot": {
+        "markdownChroma.preview.root": {
           "type": "string",
           "default": "",
           "scope": "resource",
-          "description": "Vault path relative to the workspace folder, or an absolute path inside it. Empty discovers the nearest .obsidian folder, then uses the workspace folder."
+          "description": "Preview file root relative to the workspace folder, or an absolute directory inside it. Empty uses the workspace folder, or the document's containing folder when no workspace is open."
         },
-        "obsidianMarkdown.maxEmbedDepth": {
+        "markdownChroma.preview.maxEmbedDepth": {
           "type": "number",
           "default": 5,
           "minimum": 1,
           "maximum": 20,
           "scope": "resource",
-          "description": "Maximum depth of nested note embeds. Cyclic embeds are stopped earlier."
+          "description": "Maximum nesting depth of note embeds, MyST includes, and MyST embeds. Cycles are stopped earlier."
         },
         "markdownChroma.mcp.enabled": {
           "type": "boolean",

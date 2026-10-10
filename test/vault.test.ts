@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fixture } from './helpers';
-import { discoverVault, isWithin } from '../src/vault';
+import { resolvePreviewRoot, isWithin } from '../src/vault';
 import { parseFrontmatter } from '../src/frontmatter';
 
 test('vault-relative, explicitly relative and extension-less paths resolve', async t => {
@@ -43,12 +43,30 @@ test('alias edits and renamed or deleted files update the index', async t => {
   assert.equal(f.vault.resolve('Renamed', source).status, 'found');
 });
 
-test('the nearest .obsidian directory and configured nested roots are discovered', async t => {
+test('preview roots use the workspace or containing folder regardless of .obsidian directories', async t => {
   const f = await fixture(t, { 'vault/.obsidian/app.json': '{}', 'vault/sub/Note.md': '' });
   const source = path.join(f.root, 'vault/sub/Note.md');
-  assert.equal(discoverVault(source, f.root), path.join(f.root, 'vault'));
-  assert.equal(discoverVault(source, f.root, 'vault/sub'), path.join(f.root, 'vault/sub'));
-  assert.equal(discoverVault(source, f.root, '..'), path.join(f.root, 'vault'));
+  assert.equal(resolvePreviewRoot(source, f.root), f.root);
+  assert.equal(resolvePreviewRoot(source), path.dirname(source));
+});
+
+test('configured preview roots must be existing directories inside the workspace containing the source', async t => {
+  const f = await fixture(t, { 'notes/sub/Note.md': '', 'other/Note.md': '' });
+  const source = path.join(f.root, 'notes/sub/Note.md');
+  assert.equal(resolvePreviewRoot(source, f.root, 'notes'), path.join(f.root, 'notes'));
+  assert.equal(resolvePreviewRoot(source, f.root, path.join(f.root, 'notes/sub')), path.join(f.root, 'notes/sub'));
+  for (const configured of ['..', 'missing', 'other', 'notes/sub/Note.md']) {
+    assert.equal(resolvePreviewRoot(source, f.root, configured), f.root);
+  }
+});
+
+test('configured preview roots reject symlink escapes from the workspace', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  const outside = await fs.mkdtemp(path.join(path.dirname(f.root), 'chroma-outside-root-'));
+  t.after(() => fs.rm(outside, { recursive: true, force: true }));
+  await fs.writeFile(path.join(outside, 'Note.md'), 'outside');
+  await fs.symlink(outside, path.join(f.root, 'linked'), 'dir');
+  assert.equal(resolvePreviewRoot(path.join(f.root, 'linked/Note.md'), f.root, 'linked'), f.root);
 });
 
 test('large notes are linkable but are not synchronously read for embedding', async t => {

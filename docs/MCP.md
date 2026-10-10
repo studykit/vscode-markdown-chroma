@@ -18,7 +18,7 @@ VS Code manages the server process and tool approvals. The bundled server uses t
 | `markdownChroma.mcp.enabled` | `true` | Offer an MCP server for the workspace folder |
 | `markdownChroma.mcp.root` | `""` | Use the workspace folder; set a relative path or an absolute directory inside it to narrow the root |
 
-Multi-root workspaces offer one server for each trusted local folder. Roots outside the workspace or missing directories are rejected. Definitions are refreshed when folders, settings, or trust change and are checked again before launch. The preview's `obsidianMarkdown.vaultRoot` setting is separate.
+Multi-root workspaces offer one server for each trusted local folder. Roots outside the workspace or missing directories are rejected. Definitions are refreshed when folders, settings, or trust change and are checked again before launch. The preview's `markdownChroma.preview.root` setting is separate.
 
 If a server is missing, check these settings and the **Markdown Chroma MCP** output channel.
 

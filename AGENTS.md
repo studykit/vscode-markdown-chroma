@@ -98,9 +98,9 @@ Choose verification according to the change:
 
 ### Root and compatibility behavior
 
-The preview currently uses legacy `FileVault`/`discoverVault` names in `src/vault.ts`. In ordinary Markdown folders it falls back to the workspace folder, or the containing folder for a standalone file. Existing compatibility behavior can discover a nearest `.obsidian` directory or use `obsidianMarkdown.vaultRoot`; retain this behavior unless the task explicitly changes it. Keep it separate from user-facing setup instructions.
+The preview uses `resolvePreviewRoot` in `src/vault.ts`. Its default is the workspace folder, or the containing folder for a standalone file. `markdownChroma.preview.root` can narrow the root to an existing directory inside the workspace that contains the source document; invalid directories and symlink escapes fall back to the default. This boundary applies to ordinary Markdown, Obsidian Markdown, and MyST file access. An `.obsidian` directory does not select the root. Keep optional MyST configuration discovery inside this boundary. The internal `FileVault` class name is retained.
 
-Settings and command IDs retain the `obsidianMarkdown.*` prefix for compatibility. The existing manual preview-index refresh command is `Markdown Chroma: Refresh Vault Index` (`obsidianMarkdown.refreshVault`). Renaming documentation does not authorize changing these IDs or runtime behavior.
+The shared preview settings are `markdownChroma.preview.root` and `markdownChroma.preview.maxEmbedDepth`. The depth setting applies to Obsidian note embeds and MyST includes/embeds. Existing command IDs retain the `obsidianMarkdown.*` prefix for compatibility. The existing manual preview-index refresh command is `Markdown Chroma: Refresh Vault Index` (`obsidianMarkdown.refreshVault`). Renaming documentation does not authorize changing these command IDs or runtime behavior.
 
 ### Index, CLI, and MCP
 

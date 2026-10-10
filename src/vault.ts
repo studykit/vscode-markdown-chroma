@@ -12,17 +12,15 @@ export function isWithin(root: string, candidate: string): boolean {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
-export function discoverVault(source: string, workspaceRoot?: string, configuredRoot = ''): string {
+export function resolvePreviewRoot(source: string, workspaceRoot?: string, configuredRoot = ''): string {
   const fallback = workspaceRoot ?? path.dirname(source);
   if (configuredRoot) {
     const configured = path.resolve(fallback, configuredRoot);
-    if (isWithin(fallback, configured) && isWithin(configured, source) && fs.existsSync(configured)) return configured;
-  }
-  let directory = path.dirname(source);
-  while (isWithin(fallback, directory) || !workspaceRoot) {
-    if (fs.existsSync(path.join(directory, '.obsidian'))) return directory;
-    if (directory === fallback || directory === path.dirname(directory)) break;
-    directory = path.dirname(directory);
+    if (isWithin(fallback, configured) && isWithin(configured, source)) {
+      try {
+        if (fs.statSync(configured).isDirectory() && isWithin(fs.realpathSync(fallback), fs.realpathSync(configured))) return configured;
+      } catch { /* Invalid roots fall back to the document's workspace or folder. */ }
+    }
   }
   return fallback;
 }

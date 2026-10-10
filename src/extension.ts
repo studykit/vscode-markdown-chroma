@@ -5,7 +5,7 @@ import { registerIndexMcpProvider } from './mcp-provider';
 import type MarkdownIt from 'markdown-it';
 import { extendObsidianMarkdown } from './markdown';
 import { extendMystMarkdown } from './myst';
-import { discoverVault, FileVault, isWithin } from './vault';
+import { resolvePreviewRoot, FileVault, isWithin } from './vault';
 import type { PreviewHost, RenderEnvironment } from './types';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -20,8 +20,8 @@ export async function activate(context: vscode.ExtensionContext) {
   const rootFor = (file: string) => {
     const uri = vscode.Uri.file(file);
     const workspace = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
-    const configured = vscode.workspace.getConfiguration('obsidianMarkdown', uri).get<string>('vaultRoot', '');
-    return discoverVault(file, workspace, configured);
+    const configured = vscode.workspace.getConfiguration('markdownChroma.preview', uri).get<string>('root', '');
+    return resolvePreviewRoot(file, workspace, configured);
   };
   const refreshPreviews = () => {
     clearTimeout(refreshTimer);
@@ -69,7 +69,7 @@ export async function activate(context: vscode.ExtensionContext) {
       ? env.resourceProvider.asWebviewUri(vscode.Uri.file(file)).toString()
       : pathToFileURL(file).href,
     settings: (env: RenderEnvironment) => {
-      const configuration = vscode.workspace.getConfiguration('obsidianMarkdown', env.currentDocument as vscode.Uri | undefined);
+      const configuration = vscode.workspace.getConfiguration('markdownChroma.preview', env.currentDocument as vscode.Uri | undefined);
       return {
         maxEmbedDepth: Math.min(20, Math.max(1, configuration.get<number>('maxEmbedDepth', 5)))
       };
@@ -98,7 +98,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => { void refresh(); }),
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('obsidianMarkdown')) {
+      if (event.affectsConfiguration('markdownChroma.preview')) {
         vaults.clear(); pending.clear();
         void refresh();
       }

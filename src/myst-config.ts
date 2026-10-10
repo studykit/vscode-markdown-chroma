@@ -30,7 +30,7 @@ export function mystConfiguration(host: PreviewHost, env: RenderEnvironment): { 
     for (const target of inherited) {
       if (typeof target !== 'string') throw new Error('MyST configuration extends must contain local filenames.');
       const resolution = host.resolve(target.startsWith('.') ? target : `./${target}`, file);
-      if (resolution.status !== 'found') throw new Error('Cannot load extended MyST configuration inside the vault.');
+      if (resolution.status !== 'found') throw new Error('Cannot load extended MyST configuration inside the document root.');
       project = mergeSettings(project, read(resolution.path, [...stack, file]));
     }
     const own = config.project && typeof config.project === 'object' && !Array.isArray(config.project) ? { ...config.project } : {};

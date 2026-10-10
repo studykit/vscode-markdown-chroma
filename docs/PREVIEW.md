@@ -84,13 +84,16 @@ Use the custom type in Markdown as `> [!custom-question-type]+ Title`. Colors ac
 
 In an ordinary Markdown folder, the VS Code workspace folder is the document root. When opening a file without a workspace, its containing folder is used.
 
+`markdownChroma.preview.root` optionally narrows this root to a directory inside the workspace. Relative paths start at the workspace folder; absolute directories inside it are also accepted. The directory must exist and contain the current document. Invalid paths fall back to the workspace folder. The same root applies to Markdown, Obsidian Markdown, and MyST links, embeds, and local includes. An `.obsidian` directory does not change the root. Optional `myst.yml` / `myst.yaml` configuration is discovered within this boundary.
+
 `folder/Note` is relative to the document root; `./Note` and `../Note` are relative to the current document. A bare filename is resolved in the current folder, then the root, then by a unique filename or alias within the root. Ambiguous links are marked as unresolved; specify a folder path to select the intended document. Missing notes are not created automatically.
 
 Unsaved changes in open notes are included in embeds. File creation, modification, deletion, and settings changes refresh the preview. Hidden files and folders, `node_modules`, and symbolic links are excluded from document lookup.
 
 | Setting | Default | Behavior |
 | --- | --- | --- |
-| `obsidianMarkdown.maxEmbedDepth` | `5` | Maximum depth of nested note embeds |
+| `markdownChroma.preview.root` | `""` | Document root for preview file lookup; empty uses the workspace folder or a standalone document's containing folder |
+| `markdownChroma.preview.maxEmbedDepth` | `5` | Maximum nesting depth for note embeds, MyST includes, and MyST embeds; range 1–20 |
 | `markdown.preview.frontMatter` | `"table"` | Built-in VS Code setting: `"table"`, `"codeBlock"`, or `"hide"` |
 | `markdown.preview.breaks` | `false` | Built-in VS Code setting: display single line breaks when `true` |
 

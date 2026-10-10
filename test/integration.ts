@@ -226,6 +226,83 @@ export async function run(): Promise<void> {
   const crossReferenceHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', crossReferences))!;
   assertCrossReferences(new JSDOM(crossReferenceHtml).window.document);
   console.log('PASS: actual VS Code renderer resolves MyST reference names, numbers, formatting and all anchors');
+  const previewScratch = await fs.mkdtemp(path.join(mystRoot, 'preview-root-'));
+  const sharedName = `${path.basename(previewScratch)}-shared.md`;
+  const sharedFile = path.join(mystRoot, sharedName);
+  const rootConfig = path.join(mystRoot, 'myst.yml');
+  const previewConfiguration = vscode.workspace.getConfiguration('markdownChroma.preview', vscode.Uri.file(previewScratch));
+  const previousPreviewRoot = previewConfiguration.inspect('root')?.workspaceFolderValue;
+  assert.equal(await fs.access(rootConfig).then(() => true, () => false), false, 'Root fixture has no existing MyST configuration');
+  const previewTokenSource = new vscode.CancellationTokenSource();
+  try {
+    await fs.mkdir(path.join(previewScratch, '.obsidian'));
+    await fs.writeFile(path.join(previewScratch, '.obsidian/app.json'), '{}');
+    await fs.writeFile(sharedFile, 'Shared preview-root content.');
+    await fs.writeFile(rootConfig, 'version: 1\nproject:\n  abbreviations:\n    ROOT: Shared project configuration\n');
+    const page = path.join(previewScratch, 'page.md');
+    await fs.writeFile(page, `ROOT\n\n\`\`\`{include} ../${sharedName}\n\`\`\`\n\n[[${sharedName.slice(0, -3)}]]`);
+    const previewRootDocument = await vscode.workspace.openTextDocument(page);
+    const renderRoot = async () => new JSDOM((await vscode.commands.executeCommand<string>('markdown.api.render',
+      { uri: previewRootDocument.uri, version: -1, getText: () => previewRootDocument.getText() }))!).window.document;
+    await previewConfiguration.update('root', '', vscode.ConfigurationTarget.WorkspaceFolder);
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+    let rendered = await renderRoot();
+    assert.match(rendered.body.textContent ?? '', /Shared preview-root content/);
+    assert.equal(rendered.querySelector('abbr')?.getAttribute('title'), 'Shared project configuration');
+    assert.ok(rendered.querySelector('a.obsidian-link'));
+    await previewConfiguration.update('root', path.basename(previewScratch), vscode.ConfigurationTarget.WorkspaceFolder);
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+    rendered = await renderRoot();
+    assert.match(rendered.querySelector('.myst-error')?.textContent ?? '', /outside document root/);
+    assert.equal(rendered.querySelector('abbr'), null);
+    assert.ok(rendered.querySelector('.obsidian-link.is-unresolved'));
+    assert.ok((await provider.provideMcpServerDefinitions(previewTokenSource.token))?.some(server => server.cwd?.fsPath === mystRoot));
+    await previewConfiguration.update('root', '..', vscode.ConfigurationTarget.WorkspaceFolder);
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+    assert.match((await renderRoot()).body.textContent ?? '', /Shared preview-root content/);
+  } finally {
+    previewTokenSource.dispose();
+    await previewConfiguration.update('root', previousPreviewRoot, vscode.ConfigurationTarget.WorkspaceFolder);
+    await fs.rm(previewScratch, { recursive: true, force: true });
+    await fs.rm(sharedFile, { force: true });
+    await fs.rm(rootConfig, { force: true });
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+  }
+  console.log('PASS: generic preview root ignores .obsidian, keeps parent MyST settings/includes accessible, bounds narrowed roots and remains separate from MCP');
+  const depthScratch = await fs.mkdtemp(path.join(root, 'preview-depth-'));
+  const depthConfiguration = vscode.workspace.getConfiguration('markdownChroma.preview', vscode.Uri.file(depthScratch));
+  const previousDepth = depthConfiguration.inspect('maxEmbedDepth')?.workspaceFolderValue;
+  try {
+    for (const [name, source] of Object.entries({
+      'page.md': '', 'obs-a.md': '![[./obs-b]]', 'obs-b.md': 'Nested Obsidian content.',
+      'myst-a.md': '```{include} ./myst-b.md\n```', 'myst-b.md': 'Nested MyST content.'
+    })) await fs.writeFile(path.join(depthScratch, name), source);
+    const depthDocument = await vscode.workspace.openTextDocument(path.join(depthScratch, 'page.md'));
+    for (const depth of [1, 2]) {
+      await depthConfiguration.update('maxEmbedDepth', depth, vscode.ConfigurationTarget.WorkspaceFolder);
+      await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+      for (const [source, content, error] of [
+        ['![[./obs-a]]', 'Nested Obsidian content.', /Maximum embed depth/],
+        ['```{include} ./myst-a.md\n```', 'Nested MyST content.', /over limit/]
+      ] as const) {
+        const html = (await vscode.commands.executeCommand<string>('markdown.api.render',
+          { uri: depthDocument.uri, version: -1, getText: () => source }))!;
+        const rendered = new JSDOM(html).window.document;
+        if (depth === 1) {
+          assert.match(rendered.body.textContent ?? '', error);
+          assert.ok(!rendered.body.textContent?.includes(content));
+        } else {
+          assert.ok(rendered.body.textContent?.includes(content));
+          assert.equal(rendered.querySelector('.obsidian-embed-error, .myst-error'), null);
+        }
+      }
+    }
+  } finally {
+    await depthConfiguration.update('maxEmbedDepth', previousDepth, vscode.ConfigurationTarget.WorkspaceFolder);
+    await fs.rm(depthScratch, { recursive: true, force: true });
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+  }
+  console.log('PASS: shared preview maxEmbedDepth setting limits and restores both Obsidian embeds and MyST includes');
   for (const name of ['index', 'layout', 'syntax']) {
     const doc = await vscode.workspace.openTextDocument(path.join(mystRoot, `${name}.md`));
     const html = (await vscode.commands.executeCommand<string>('markdown.api.render', doc))!;

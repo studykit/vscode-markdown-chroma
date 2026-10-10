@@ -115,7 +115,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       if (node.type === 'include') {
         const included = read(node.file, environment);
         if (!included || stack.includes(included.file) || stack.length > host.settings(environment).maxEmbedDepth) {
-          node.type = 'previewError'; node.value = 'Cannot include this file (missing, outside vault, cyclic or over limit).'; return;
+          node.type = 'previewError'; node.value = 'Cannot include this file (missing, outside document root, cyclic or over limit).'; return;
         }
         let source = included.content;
         const filter = node.filter;

@@ -64,7 +64,8 @@ Use VS Code's normal Markdown preview settings and your preferred theme. For a d
 
 | Setting | Default | Use it to |
 | --- | --- | --- |
-| `obsidianMarkdown.maxEmbedDepth` | `5` | Limit how deeply notes can embed other notes |
+| `markdownChroma.preview.root` | `""` | Choose the folder used to resolve preview links and local includes; empty uses the workspace folder |
+| `markdownChroma.preview.maxEmbedDepth` | `5` | Limit nested note embeds and MyST includes or embeds |
 | `markdown.preview.frontMatter` | `"table"` | Show frontmatter as a table, code block, or hide it |
 | `markdown.preview.breaks` | `false` | Display single line breaks in the preview |
 
