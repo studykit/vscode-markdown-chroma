@@ -12,6 +12,8 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { IndexService, type IndexQuery } from '../src/index/query';
 import { startHttp } from '../src/mcp/http';
 import { mcpTools } from '../src/mcp/server';
+import { presentResult } from '../src/index/presentation';
+import { assertRetrievalResult } from './retrieval-contract';
 
 const source = '# Setup\nParent.\n\n## Child\nChild body.\n\n:::{glossary}\nAST\n: Tree definition.\n:::\n';
 const options = { host: '127.0.0.1', port: 0, allowedHosts: ['localhost', '127.0.0.1'], allowedOrigins: ['localhost', '127.0.0.1'] };
@@ -31,30 +33,38 @@ test('HTTP URL discovers the same tools and reads fresh root-bound content acros
     await Promise.all(clients.map(client => client.connect(new StreamableHTTPClientTransport(new URL(handle.url)))));
     const tools = await clients[0].listTools();
     assert.deepEqual(tools.tools.map(t => t.name).sort(), mcpTools.map(([name]) => name).sort());
-    const call = async (client: Client, name: string, args: Record<string, unknown> = {}) => (await client.callTool({ name, arguments: args })).structuredContent as any;
+    const call = async (client: Client, name: string, args: Record<string, unknown> = {}) => {
+      const result = (await client.callTool({ name, arguments: args })).structuredContent as any;
+      assertRetrievalResult(result); return result;
+    };
     const sections = await call(clients[0], 'list_sections', { file: 'guide.md' });
     const selected = sections.sections.find((s: any) => s.title === 'Setup');
-    const read = await call(clients[1], 'read_section', { file: 'guide.md', id: selected.id, sourceHash: sections.sourceHash });
+    assert.deepEqual(sections, { complete: true, file: 'guide.md', sections: [{ title: 'Setup', children: [{ title: 'Child' }] }] });
+    const original = await f.service.execute({ command: 'sections', arguments: { file: 'guide.md' } });
+    assert.ok('sourceHash' in original);
+    const read = await call(clients[1], 'read_section', { file: 'guide.md', title: selected.title });
     assert.match(read.content, /Child body/);
     const term = (await call(clients[0], 'list_terms')).terms[0];
     const queries: [string, IndexQuery][] = [
       ['list_notes', { command: 'notes', arguments: {} }],
       ['list_glossaries', { command: 'glossaries', arguments: {} }],
+      ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', title: 'Child' } }],
+      ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }],
       ['read_terms', { command: 'read-term', arguments: { ids: [term.id] } }],
       ['read_items', { command: 'read', arguments: { ids: [term.id, 'missing'] } }],
     ];
-    for (const [name, query] of queries) assert.deepEqual(await call(clients[0], name, query.arguments), await f.service.execute(query));
+    for (const [name, query] of queries) assert.deepEqual(await call(clients[0], name, query.arguments), presentResult(await f.service.execute(query)));
     const escaped = await call(clients[0], 'list_sections', { file: '../outside.md' });
     assert.equal(escaped.error.code, 'outsideRoot');
     const changedRoot = await clients[0].callTool({ name: 'list_notes', arguments: { root: f.directory } });
     assert.equal(changedRoot.isError, true);
     await fs.writeFile(path.join(f.root, 'guide.md'), source.replace('Parent.', 'Updated.'));
-    const stale = await call(clients[0], 'read_section', { file: 'guide.md', id: selected.id, sourceHash: sections.sourceHash });
+    const stale = await call(clients[0], 'read_section', { file: 'guide.md', title: selected.title, sourceHash: original.sourceHash });
     assert.equal(stale.error.code, 'documentChanged');
-    const current = await call(clients[1], 'read_section', { file: 'guide.md', id: selected.id });
+    const current = await call(clients[1], 'read_section', { file: 'guide.md', title: selected.title });
     assert.match(current.content, /Updated/);
     const concurrent = await Promise.all(clients.flatMap(client => Array.from({ length: 3 }, () => call(client, 'list_notes'))));
-    assert.ok(concurrent.every(result => result.complete && result.root === f.service.root));
+    assert.ok(concurrent.every(result => result.complete && result.notes[0].file === 'guide.md' && !('root' in result)));
     assert.deepEqual(errors, []);
   } finally { await Promise.all(clients.map(client => client.close())); await handle.close(); await f.cleanup(); }
 });
@@ -122,7 +132,7 @@ test('HTTP CLI defaults root to cwd, reports URL on stderr and shuts down on SIG
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(url)));
       const result = await client.callTool({ name: 'index_documents', arguments: {} });
-      assert.equal((result.structuredContent as Record<string, unknown>).root, await fs.realpath(f.root));
+      assert.deepEqual(result.structuredContent, { complete: true, documents: 1 });
       // Verify background indexing before another query can refresh the snapshot.
       await fs.writeFile(path.join(f.root, 'guide.md'), source.replace('# Setup', '# HTTP watched'));
       const deadline = Date.now() + 4000;

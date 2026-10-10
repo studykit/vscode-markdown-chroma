@@ -299,7 +299,20 @@ export class MarkdownIndex {
     if (!document) throw new IndexError('fileNotFound', `Markdown file is not indexed: ${file}`);
     return document;
   }
-  section(document: DocumentIndex, id?: string, label?: string): Section {
+  section(document: DocumentIndex, id?: string, label?: string, title?: string, headingPath?: string[]): Section {
+    if (title !== undefined || headingPath !== undefined) {
+      const pathKey = (section: Section) => JSON.stringify(section.headingPath);
+      const matches = document.sections.filter(section => title !== undefined ? section.title === title : pathKey(section) === JSON.stringify(headingPath));
+      if (matches.length === 1) return matches[0];
+      if (matches.length > 1) {
+        const paths = new Map<string, number>();
+        for (const section of matches) paths.set(pathKey(section), (paths.get(pathKey(section)) ?? 0) + 1);
+        const candidates = matches.map(section => ({ title: section.title, headingPath: section.headingPath,
+          ...(paths.get(pathKey(section))! > 1 ? { id: section.id } : {}) }));
+        throw new IndexError('ambiguousSection', 'Multiple sections match. Select a headingPath, or an id when paths are identical.', candidates);
+      }
+      throw new IndexError('sectionNotFound', 'Section was not found. List its titles again.');
+    }
     const matches = document.sections.filter(section => id ? section.id === id : section.labels.some(value => normalizeLabel(value)?.identifier === normalizeLabel(label)?.identifier));
     if (matches.length > 1) throw new IndexError('ambiguousSection', 'Multiple sections have this label.', matches);
     if (matches.length === 1) return matches[0];

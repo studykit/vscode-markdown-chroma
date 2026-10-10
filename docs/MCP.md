@@ -127,27 +127,41 @@ File arguments are exact paths relative to the server root. Optional arguments m
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `index_documents` | `rebuild` | Refresh/rebuild the cache and return statistics |
-| `list_notes` | `unresolved` | Documents, tags, properties, references, and item counts |
+| `index_documents` | `rebuild` | Refresh available documents and return their count |
+| `list_notes` | `unresolved` | Files and titles |
 | `search_notes` | `tags`, `exactTag`, `where`, `hasProperty` | AND search; at least one tag/property filter is required |
 | `get_backlinks` | **`file`**, `term` | Incoming references to a document or term |
-| `list_sections` | **`file`** | Section hierarchy, IDs, labels, and source hash |
-| `read_section` | **`file`**, **`id` or `label`**, `includeChildren`, `sourceHash` | Original Markdown, including child sections by default |
-| `list_tables` | `file`, `section` | Table captions, headers, dimensions, and locations |
-| `list_images` | `file`, `section` | Image sources, alt text, figure metadata, and locations |
-| `list_glossaries` | `file` | Glossaries across the root or in one file |
-| `list_terms` | `file`, `glossary`, `name` | Term definitions across the root or in a narrower scope |
+| `list_sections` | **`file`** | A tree of section titles |
+| `read_section` | **`file`**, **one of `title`, `headingPath`, `id`, or `label`**, `includeChildren`, `sourceHash` | Original Markdown, including child sections by default |
+| `list_tables` | `file`, `section` | Captions, headers, and owning heading paths |
+| `list_images` | `file`, `section` | Sources, alt text, captions, and owning heading paths |
+| `list_glossaries` | `file` | Glossary choices and term counts |
+| `list_terms` | `file`, `glossary`, `name` | Term names, files, and IDs for reading |
 | `read_terms` | **`names` or `ids`**, `file`, `sourceHash` | Multiple selected definitions; `file` applies only to name selection |
-| `read_glossaries` | **`ids`** | Original Markdown for selected glossaries |
+| `read_glossaries` | **`ids` or `file` with `title` or `headingPath`** | Original Markdown for selected glossaries; titles select the owning section |
 | `read_items` | **`ids`** | A mix of selected terms and glossaries |
 
 A `section` filter also requires `file`. `where` is a JSON object with string, number, boolean, or null values; array properties match members. Tags include descendants by default.
 
-List sections or glossary/term items first, then read IDs returned by those responses. Do not infer source line ranges. Use `sourceHash` when the read must match a previous listing.
+List sections first, then read an exact, case-sensitive `title`. Duplicate titles return candidate full heading paths; pass one as `headingPath: ["Parent", "Child"]`. If the path is also duplicated, candidates include IDs for explicit selection. IDs and MyST labels remain supported. Read a glossary by its file and owning section title or path, or use listed IDs for batch selections and indistinguishable glossaries. Term reads use names or listed IDs. Do not infer source line ranges. A titleless `[preamble]` item can be read with `id: "preamble"`.
 
 ## Results and saved-file behavior
 
-Results include `schemaVersion: 1`, `complete`, and command-specific data. MCP returns both `structuredContent` and JSON text `content`. Partial results use `complete: false` and `isError: true`, preserving successful items alongside diagnostics or per-item errors. SDK input validation errors may have text content without `structuredContent`.
+Results contain retrieval information and `complete`. They omit cache paths, versions, hashes, source line ranges, and parser records. MCP returns the same concise result as `structuredContent` and JSON text `content`. Partial results use `complete: false` and `isError: true`, preserving successful items alongside `issues` or per-item errors. SDK input validation errors may have text content without `structuredContent`.
+
+For example, `list_sections` returns:
+
+```json
+{
+  "complete": true,
+  "file": "guide.md",
+  "sections": [
+    { "title": "Installation", "children": [{ "title": "macOS" }] }
+  ]
+}
+```
+
+Read a listed title with `read_section({"file":"guide.md","title":"macOS"})`. A successful read returns the file and original Markdown `content`. Term/glossary batch reads return each item's kind, file, name when available, and content. Ambiguous reads provide concise `candidates` for explicit selection. CLI `--json` uses this same retrieval format. Full records remain available through the Node API and CLI `--debug`; MCP does not return them.
 
 Ambiguous term names return `ambiguousTerm` with candidates; choose a file or a global ID. Batch selections preserve request order and deduplicate identical selections. Selecting a glossary and one of its terms returns both.
 

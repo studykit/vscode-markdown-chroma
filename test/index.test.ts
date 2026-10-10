@@ -50,6 +50,23 @@ test('mixed tokenizer collects semantic content once and ignores code, math, com
   assert.equal(document.images.length, 1);
 });
 
+test('built CLI handles internationalized URLs without loading deprecated punycode', async t => {
+  const source = '# <https://xn--maana-pta.com>\n\n![Remote](https://mañana.com/picture.png)\n';
+  const f = await fixture({ 'urls.md': source }); t.after(f.cleanup);
+  const env = { ...process.env }; delete env.NODE_NO_WARNINGS; delete env.NODE_OPTIONS;
+  const cli = async (...args: string[]) => {
+    const result = await execute(process.execPath, ['--pending-deprecation', path.resolve('dist/cli.cjs'), ...args,
+      '--root', f.root, '--cache-dir', f.cache], { env });
+    assert.doesNotMatch(result.stderr, /DEP0040|punycode.*deprecated/);
+    return result.stdout;
+  };
+  const sections = JSON.parse(await cli('sections', 'urls.md', '--debug'));
+  assert.equal(sections.sections[0].title, 'https://mañana.com');
+  const images = JSON.parse(await cli('images', 'urls.md', '--json'));
+  assert.equal(images.images[0].source, 'https://xn--maana-pta.com/picture.png');
+  assert.equal(await cli('read-section', 'urls.md', '--title', 'https://mañana.com'), source);
+});
+
 test('tables and images survive layout containers without wrapper duplicates', () => {
   const source = '# Content\n\n::::{grid} 1\n(layout)=\n:::{grid-item}\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n![A](a.png)\n![Again][asset]\n\n:::\n::::\n\n[asset]: a.png\n\n:::{list-table} Caption\n:name: list\n:header-rows: 1\n\n* - H1\n  - H2\n* - V1\n  - V2\n:::\n\n:::{table} Named\n:name: pipe\n\n| A | B |\n| - | - |\n| 1 | 2 |\n:::\n\n:::{csv-table} CSV\n:header: X, Y\n\n1,2\n3,4\n:::\n\n:::{figure}\n:name: multi\n\n![First](first.png)\n![Second](second.png)\n\nGroup caption.\n:::\n\n:::{figure} generated.png\n:name: generated\n\nGenerated caption.\n:::\n\n:::{image} direct.png\n:alt: Direct\n:::\n';
   const document = parseIndex('a.md', source);
@@ -87,13 +104,13 @@ test('glossary definitions include paragraphs, lists, tables and exclude adjacen
 
 test('tag and typed property filters combine with AND; null counts as a property', async t => {
   const f = await fixture({ 'a.md': '---\ntags: [Project/Sub]\nstatus: draft\nnumber: 7\nflag: true\nauthor: null\nchoices: [x, y]\n---\n# A\n#본문\n', 'b.md': '---\ntags: project\nstatus: published\nnumber: "7"\n---\n# B\n' }); t.after(f.cleanup);
-  assert.deepEqual((await f.cli('search', '--tag', 'PROJECT')).json().notes.map((n: any) => n.file), ['a.md', 'b.md']);
-  assert.deepEqual((await f.cli('search', '--tag', 'project', '--exact-tag')).json().notes.map((n: any) => n.file), ['b.md']);
-  assert.equal((await f.cli('search', '--tag', 'project', '--where', '{"number":7,"flag":true,"choices":"y"}', '--has-property', 'author')).json().notes[0].file, 'a.md');
-  assert.equal((await f.cli('search', '--where', '{"number":"7"}')).json().notes[0].file, 'b.md');
-  assert.equal((await f.cli('search', '--where', '{"author":null}')).json().notes.length, 1);
-  assert.equal((await f.cli('search', '--where', '{"absent":null}')).json().notes.length, 0);
-  assert.equal((await f.cli('search', '--where', '{"a":[]}')).code, 2);
+  assert.deepEqual((await f.cli('search', '--debug', '--tag', 'PROJECT')).json().notes.map((n: any) => n.file), ['a.md', 'b.md']);
+  assert.deepEqual((await f.cli('search', '--debug', '--tag', 'project', '--exact-tag')).json().notes.map((n: any) => n.file), ['b.md']);
+  assert.equal((await f.cli('search', '--debug', '--tag', 'project', '--where', '{"number":7,"flag":true,"choices":"y"}', '--has-property', 'author')).json().notes[0].file, 'a.md');
+  assert.equal((await f.cli('search', '--debug', '--where', '{"number":"7"}')).json().notes[0].file, 'b.md');
+  assert.equal((await f.cli('search', '--debug', '--where', '{"author":null}')).json().notes.length, 1);
+  assert.equal((await f.cli('search', '--debug', '--where', '{"absent":null}')).json().notes.length, 0);
+  assert.equal((await f.cli('search', '--debug', '--where', '{"a":[]}')).code, 2);
 });
 
 test('backlinks resolve files, aliases, sections, term targets and ambiguous references in a second pass', async t => {
@@ -108,7 +125,7 @@ test('backlinks resolve files, aliases, sections, term targets and ambiguous ref
   assert.equal(refs.find(r => r.target === 'part-label' && r.kind === 'citation')!.resolution!.targetKind, 'section');
   assert.equal(f.index.backlinks(f.index.document('Target.md')).length, 7);
   assert.equal(f.index.backlinks(f.index.document('Target.md'), 'term-myst-markdown').length, 1);
-  assert.equal((await f.cli('notes', '--unresolved')).json().notes[0].file, 'source.md');
+  assert.equal((await f.cli('notes', '--debug', '--unresolved')).json().notes[0].file, 'source.md');
   await f.write('Target.md', '# Changed\n'); await f.index.refresh();
   assert.equal(f.index.document('source.md').outgoing.find(r => r.target === 'Alias')!.resolution!.status, 'missing');
   assert.equal(f.index.document('source.md').outgoing.find(r => r.kind === 'term')!.resolution!.status, 'missing');
@@ -126,38 +143,127 @@ test('CLI supports project-wide lists, batch/mixed reads, duplicates and partial
   const a = '(g)=\n:::{glossary}\nAST\n: First definition.\n\nRole\n: A role.\n:::\n';
   const b = ':::{glossary}\nAST\n: Other definition.\n\nUnique\n: Unique definition.\n:::\n';
   const f = await fixture({ 'a.md': a, 'b.md': b }); t.after(f.cleanup);
-  assert.equal((await f.cli('glossaries')).json().glossaries.length, 2);
-  assert.equal((await f.cli('terms')).json().terms.length, 4);
-  assert.equal((await f.cli('terms', 'a.md', '--glossary', 'glossary-1')).json().terms.length, 2);
-  assert.equal((await f.cli('terms', '--glossary', 'b.md#glossary-1')).json().terms.length, 2);
-  const partial = await f.cli('read-term', 'Unique', 'AST', 'Missing', '--json');
+  assert.equal((await f.cli('glossaries', '--debug')).json().glossaries.length, 2);
+  assert.equal((await f.cli('terms', '--debug')).json().terms.length, 4);
+  assert.equal((await f.cli('terms', '--debug', 'a.md', '--glossary', 'glossary-1')).json().terms.length, 2);
+  assert.equal((await f.cli('terms', '--debug', '--glossary', 'b.md#glossary-1')).json().terms.length, 2);
+  const partial = await f.cli('read-term', 'Unique', 'AST', 'Missing', '--debug');
   assert.equal(partial.code, 1); assert.equal(partial.json().complete, false);
   assert.deepEqual(partial.json().items.map((i: any) => i.status), ['ok', 'error', 'error']);
   assert.equal(partial.json().items[1].error.code, 'ambiguousTerm');
   assert.equal(partial.json().items[1].error.details.length, 2);
   assert.equal((await f.cli('read-term', 'AST', '--file', 'a.md')).stdout, 'AST\n: First definition.\n');
-  const mixed = (await f.cli('read', '--id', 'b.md#term-unique', '--id', 'a.md#glossary-1', '--id', 'b.md#term-unique', '--id', 'a.md#term-role', '--json')).json();
+  const mixed = (await f.cli('read', '--id', 'b.md#term-unique', '--id', 'a.md#glossary-1', '--id', 'b.md#term-unique', '--id', 'a.md#term-role', '--debug')).json();
   assert.deepEqual(mixed.items.map((i: any) => i.kind), ['term', 'glossary', 'term']);
   assert.equal(mixed.items[1].content, a);
-  assert.equal((await f.cli('read-glossary', '--id', 'a.md#glossary-1', '--id', 'b.md#glossary-1', '--json')).json().items.length, 2);
+  assert.equal((await f.cli('read-glossary', '--id', 'a.md#glossary-1', '--id', 'b.md#glossary-1', '--debug')).json().items.length, 2);
   const markdown = await f.cli('read-term', '--id', 'a.md#term-role', '--id', 'b.md#term-unique');
-  assert.ok(markdown.stdout.includes('a.md#term-role') && markdown.stdout.includes('b.md#term-unique'));
-  assert.equal((await f.cli('read-term', '--id', 'a.md#term-role', 'Role', '--json')).code, 2);
-  assert.equal((await f.cli('read-term', '--id', 'a.md#term-role', '--id', 'b.md#term-unique', '--source-hash', hash(a), '--json')).code, 2);
+  assert.ok(markdown.stdout.includes('a.md') && markdown.stdout.includes('b.md') && markdown.stdout.includes('Unique definition.'));
+  assert.ok(!markdown.stdout.includes('term-role') && !markdown.stdout.includes('term-unique'));
+  assert.equal((await f.cli('read-term', '--id', 'a.md#term-role', 'Role', '--debug')).code, 2);
+  assert.equal((await f.cli('read-term', '--id', 'a.md#term-role', '--id', 'b.md#term-unique', '--source-hash', hash(a), '--debug')).code, 2);
 });
 
 test('section reads verify fresh source hashes and section-scoped lists include descendants', async t => {
   const source = '(parent)=\n# Parent\nBody\n## Child\n![Image](a.png)\n# Next\nEnd\n';
   const f = await fixture({ 'a.md': source, 'a.png': 'image' }); t.after(f.cleanup);
-  const listed = (await f.cli('sections', 'a.md')).json();
-  const read = await f.cli('read-section', 'a.md', '--label', 'parent', '--no-children', '--source-hash', listed.sourceHash, '--json');
+  const listed = (await f.cli('sections', 'a.md', '--debug')).json();
+  const read = await f.cli('read-section', 'a.md', '--label', 'parent', '--no-children', '--source-hash', listed.sourceHash, '--debug');
   assert.equal(read.json().content, '(parent)=\n# Parent\nBody\n');
-  assert.equal((await f.cli('images', 'a.md', '--section', 'parent')).json().images.length, 1);
-  assert.equal((await f.cli('images', 'a.md', '--section', 'next')).json().images.length, 0);
+  assert.equal((await f.cli('images', '--debug', 'a.md', '--section', 'parent')).json().images.length, 1);
+  assert.equal((await f.cli('images', '--debug', 'a.md', '--section', 'next')).json().images.length, 0);
   await f.write('a.md', source.replace('Body', 'Changed'));
-  const stale = await f.cli('read-section', 'a.md', '--id', 'parent', '--source-hash', listed.sourceHash, '--json');
+  const stale = await f.cli('read-section', 'a.md', '--title', 'Parent', '--source-hash', listed.sourceHash, '--debug');
   assert.equal(stale.code, 1); assert.equal(stale.json().error.code, 'documentChanged');
-  assert.equal((await f.cli('sections', '../outside.md')).json().error.code, 'outsideRoot');
+  assert.equal((await f.cli('sections', '../outside.md', '--debug')).json().error.code, 'outsideRoot');
+});
+
+test('CLI sections list titles by hierarchy and title reads retain exact source and debug metadata', async t => {
+  const source = 'Intro.\r\n\r\n(parent)=\r\n# **설치**\r\nParent body.\r\n### macOS\r\nChild body.\r\n# End\r\nDone.\r\n';
+  const f = await fixture({ 'guide.md': source, 'empty.md': '', 'body.md': 'Body only.' }); t.after(f.cleanup);
+  const outline = await f.cli('sections', 'guide.md');
+  assert.equal(outline.code, 0);
+  assert.equal(outline.stdout, '[preamble]\n설치\n  macOS\nEnd\n');
+  assert.equal(outline.stderr, '');
+  const detailed = (await f.cli('sections', 'guide.md', '--debug')).json();
+  assert.equal(detailed.complete, true);
+  assert.equal(detailed.sourceHash, hash(source));
+  assert.deepEqual(detailed.sections[1].labels, ['parent']);
+  assert.ok(detailed.sections[1].ownEndLine < detailed.sections[1].endLine);
+  const own = await f.cli('read-section', 'guide.md', '--title', '설치', '--no-children');
+  assert.equal(own.code, 0);
+  assert.equal(own.stdout, '(parent)=\r\n# **설치**\r\nParent body.\r\n');
+  assert.equal((await f.cli('read-section', 'guide.md', '--title', 'macOS')).stdout, '### macOS\r\nChild body.\r\n');
+  assert.equal((await f.cli('read-section', 'guide.md', '--title', 'end', '--debug')).json().error.code, 'sectionNotFound');
+  assert.equal((await f.cli('sections', 'empty.md')).stdout, '');
+  assert.equal((await f.cli('sections', 'body.md')).stdout, '[preamble]\n');
+  assert.equal((await f.cli('read-section', 'body.md', '--id', 'preamble')).stdout, 'Body only.');
+  for (const args of [
+    ['--title', 'macOS', '--id', 'macos'], ['--title', 'macOS', '--label', 'parent'],
+    ['--title', 'macOS', '--heading-path', '["설치","macOS"]'], ['--title', 'macOS', '--title', 'End'],
+    ...['broken', 'null', '[]', '[""]', '["설치",2]'].map(value => ['--heading-path', value])
+  ]) assert.equal((await f.cli('read-section', 'guide.md', ...args, '--debug')).code, 2);
+  const missing = await f.cli('sections', 'missing.md');
+  assert.equal(missing.code, 1); assert.equal(missing.stdout, ''); assert.match(missing.stderr, /fileNotFound/);
+  const invalid = await f.cli('sections');
+  assert.equal(invalid.code, 2); assert.equal(invalid.stdout, ''); assert.match(invalid.stderr, /invalidArguments/);
+});
+
+test('duplicate section titles require paths, identical paths require IDs, and errors retain candidates', async t => {
+  const source = '# Linux > Desktop\n## Setup\nFirst.\n# macOS\n## Setup\nMac.\n# Linux > Desktop\n## Setup\nSecond.\n';
+  const f = await fixture({ 'guide.md': source }); t.after(f.cleanup);
+  const ambiguous = await f.cli('read-section', 'guide.md', '--title', 'Setup', '--debug');
+  assert.equal(ambiguous.code, 1);
+  assert.equal(ambiguous.json().error.code, 'ambiguousSection');
+  assert.deepEqual(ambiguous.json().error.details, [
+    { title: 'Setup', headingPath: ['Linux > Desktop', 'Setup'], id: 'setup' },
+    { title: 'Setup', headingPath: ['macOS', 'Setup'] },
+    { title: 'Setup', headingPath: ['Linux > Desktop', 'Setup'], id: 'setup-2' },
+  ]);
+  const plainError = await f.cli('read-section', 'guide.md', '--title', 'Setup');
+  assert.equal(plainError.stdout, ''); assert.match(plainError.stderr, /ambiguousSection/);
+  assert.equal(plainError.stderr.split('\n').slice(1).join('\n'), '  - Setup (Linux > Desktop > Setup; id: setup)\n  - Setup (macOS > Setup)\n  - Setup (Linux > Desktop > Setup; id: setup-2)\n');
+  const mac = await f.cli('read-section', 'guide.md', '--heading-path', '["macOS","Setup"]');
+  assert.equal(mac.code, 0); assert.equal(mac.stdout, '## Setup\nMac.\n');
+  const repeated = await f.cli('read-section', 'guide.md', '--heading-path', '["Linux > Desktop","Setup"]', '--debug');
+  assert.equal(repeated.json().error.code, 'ambiguousSection');
+  assert.deepEqual(repeated.json().error.details.map((candidate: any) => candidate.id), ['setup', 'setup-2']);
+  assert.equal((await f.cli('read-section', 'guide.md', '--id', 'setup-2')).stdout, '## Setup\nSecond.\n');
+  assert.equal((await f.cli('read-section', 'guide.md', '--heading-path', '["Setup"]', '--debug')).json().error.code, 'sectionNotFound');
+});
+
+test('glossaries read by owning title or full heading path and retain exact directive source', async t => {
+  const first = '(first)=\r\n:::{glossary}\r\nAST\r\n: First definition.\r\n:::\r\n';
+  const second = ':::{glossary}\r\nRole\r\n: Second definition.\r\n:::\r\n';
+  const f = await fixture({ 'guide.md': `# Linux\r\n## Terms\r\n${first}# macOS\r\n## Terms\r\n${second}`, 'single.md': `# Definitions\r\n${first}` }); t.after(f.cleanup);
+  const listed = await f.cli('glossaries', 'guide.md');
+  assert.equal(listed.stdout, '- Linux > Terms (guide.md; 1 term)\n- macOS > Terms (guide.md; 1 term)\n');
+  const ambiguous = await f.cli('read-glossary', 'guide.md', '--title', 'Terms', '--json');
+  assert.equal(ambiguous.code, 1); assert.equal(ambiguous.json().error.code, 'ambiguousGlossary');
+  assert.deepEqual(ambiguous.json().error.candidates, [
+    { title: 'Terms', headingPath: ['Linux', 'Terms'], file: 'guide.md' },
+    { title: 'Terms', headingPath: ['macOS', 'Terms'], file: 'guide.md' },
+  ]);
+  assert.equal((await f.cli('read-glossary', 'guide.md', '--heading-path', '["Linux","Terms"]')).stdout, first);
+  assert.equal((await f.cli('read-glossary', 'single.md', '--title', 'Definitions')).stdout, first);
+  const compact = (await f.cli('read-glossary', 'guide.md', '--heading-path', '["macOS","Terms"]', '--json')).json();
+  assert.deepEqual(compact, { complete: true, items: [{ kind: 'glossary', file: 'guide.md', content: second }] });
+  const missing = await f.cli('read-glossary', 'guide.md', '--title', 'Linux');
+  assert.equal(missing.code, 1); assert.equal(missing.stdout, ''); assert.match(missing.stderr, /glossaryNotFound/);
+  for (const args of [[], ['guide.md'], ['--title', 'Terms'], ['guide.md', '--title', 'Terms', '--heading-path', '["Linux","Terms"]'],
+    ['guide.md', '--id', 'guide.md#glossary-1'], ['guide.md', '--heading-path', '[]']])
+    assert.equal((await f.cli('read-glossary', ...args)).code, 2);
+});
+
+test('glossaries sharing one heading require listed IDs instead of choosing the first', async t => {
+  const first = ':::{glossary}\nAST\n: First.\n:::\n';
+  const second = ':::{glossary}\nAPI\n: Second.\n:::\n';
+  const f = await fixture({ 'guide.md': `# Terms\n${first}\n${second}` }); t.after(f.cleanup);
+  const selected = await f.cli('read-glossary', 'guide.md', '--title', 'Terms', '--json');
+  assert.equal(selected.json().error.code, 'ambiguousGlossary');
+  assert.deepEqual(selected.json().error.candidates.map((candidate: any) => candidate.id), ['guide.md#glossary-1', 'guide.md#glossary-2']);
+  assert.match((await f.cli('glossaries')).stdout, /id: guide.md#glossary-2/);
+  assert.equal((await f.cli('read-glossary', '--id', 'guide.md#glossary-2')).stdout, second);
 });
 
 test('disk cache reuses parsed records, rebuilds corruption/version changes and updates deletions/assets', async t => {
@@ -190,7 +296,7 @@ test('same-size edits and duplicate term changes refresh hashes and references w
 
 test('separate CLI processes share a cache safely, including concurrent updates and stale locks', async t => {
   const f = await fixture({ 'a.md': '# A\n', 'b.md': '# B\n' }); t.after(f.cleanup);
-  const argv = [path.resolve('dist/cli.cjs'), 'index', '--root', f.root, '--cache-dir', f.cache];
+  const argv = [path.resolve('dist/cli.cjs'), 'index', '--root', f.root, '--cache-dir', f.cache, '--debug'];
   const first = JSON.parse((await execute(process.execPath, argv)).stdout); assert.equal(first.parsed, 2);
   const results = await Promise.all(Array.from({ length: 4 }, () => execute(process.execPath, argv)));
   for (const result of results) { assert.equal(JSON.parse(result.stdout).reused, 2); assert.equal(JSON.parse(result.stdout).generation, first.generation); }
@@ -212,7 +318,7 @@ test('labels include separated label lines; math, empty links and MyST embeds re
   assert.deepEqual(refs.map(r => r.resolution?.targetKind), ['glossary', 'math', 'image', 'glossary']);
   assert.equal(refs[0].resolution?.targetId, 'b.md#glossary-1');
   assert.equal((await f.cli('read-glossary', '--id', 'b.md#glossary-1')).stdout, '(glossary-label)=\n\n:::{glossary}\nWord\n: Definition.\n:::\n');
-  assert.equal((await f.cli('read-section', 'b.md', '--label', 'image-label', '--json')).json().error.code, 'notASection');
+  assert.equal((await f.cli('read-section', 'b.md', '--label', 'image-label', '--debug')).json().error.code, 'notASection');
 });
 
 test('declared external tables retain metadata without loading data, including unsupported parser declarations', () => {
@@ -230,7 +336,7 @@ test('implicit MyST heading references prefer local targets and exact Markdown f
   assert.equal(refs[0].resolution?.file, 'a.md'); assert.equal(refs[1].resolution?.file, 'a.md');
   assert.equal(refs[2].resolution?.targetId, 'same'); assert.equal(refs[2].resolution?.fragmentStatus, 'found');
   assert.equal(refs[3].resolution?.fragmentStatus, 'ambiguous');
-  assert.equal((await f.cli('read-section', 'a.md', '--label', 'heading-name', '--json')).json().section.id, 'heading-name');
+  assert.equal((await f.cli('read-section', 'a.md', '--label', 'heading-name', '--debug')).json().section.id, 'heading-name');
 });
 
 test('local MyST config and frontmatter overrides invalidate parsing; bibliography citations are excluded', async t => {
@@ -251,9 +357,11 @@ test('excluded paths and symlinks cannot become indexed or readable; invalid doc
   await fs.writeFile(path.join(f.directory, 'outside.md'), '# Outside\n');
   await fs.symlink(path.join(f.directory, 'outside.md'), path.join(f.root, 'link.md'));
   await fs.symlink(f.directory, path.join(f.root, 'linked-dir'));
-  const result = await f.cli('notes'); assert.equal(result.code, 1); assert.equal(result.json().complete, false);
+  const result = await f.cli('notes', '--debug'); assert.equal(result.code, 1); assert.equal(result.json().complete, false);
   assert.deepEqual(result.json().notes.map((n: any) => n.file), ['a.md', 'bad.md', 'large.md']);
-  assert.ok(result.json().diagnostics.some((d: any) => d.code === 'fileTooLarge'));
-  assert.equal((await f.cli('sections', 'bad.md')).json().sections[0].title, 'Still parsed');
-  assert.equal((await f.cli('sections', 'link.md')).json().error.code, 'fileNotFound');
+  assert.ok(result.json().diagnostics.some((d: any) => d.file === 'large.md'));
+  const partialOutline = await f.cli('sections', 'bad.md');
+  assert.equal(partialOutline.code, 1); assert.equal(partialOutline.stdout, 'Still parsed\n'); assert.match(partialOutline.stderr, /large.md/);
+  assert.equal((await f.cli('sections', 'bad.md', '--debug')).json().sections[0].title, 'Still parsed');
+  assert.equal((await f.cli('sections', 'link.md', '--debug')).json().error.code, 'fileNotFound');
 });

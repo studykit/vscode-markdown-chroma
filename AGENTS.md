@@ -76,7 +76,7 @@ Choose verification according to the change:
 | Preview document lookup, aliases, and file access | `src/vault.ts` |
 | MyST rendering, references, and optional configuration | `src/myst.ts`, `src/references.ts`, `src/myst-config.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
-| Persistent indexing, parsing, records, shared queries, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
+| Persistent indexing, parsing, records, shared queries, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
 | CLI entry point and argument handling | `src/cli.ts`, `src/index/cli.ts` |
 | Public Node API exports | `src/index/index.ts` |
 | MCP entry point, transport selection, stdio / HTTP lifecycle, and tools | `src/mcp.ts`, `src/mcp/cli.ts`, `src/mcp/stdio.ts`, `src/mcp/http.ts`, `src/mcp/server.ts` |
@@ -106,7 +106,9 @@ The shared preview settings are `markdownChroma.preview.root` and `markdownChrom
 
 - Keep CLI and MCP queries on the same root-bound `IndexService`. Export the shared API and TypeScript declarations through `markdown-chroma/index`.
 - The index uses an explicit root, defaults to the current directory, and does not depend on `.obsidian` configuration or indexes. Do not add special handling for Obsidian `%%…%%` comments or block IDs without an explicit scope change; preview support differs from index support.
-- List section IDs and labels before reading sections; do not guess source line ranges. Preserve exact source ranges and source-hash checks for stale reads.
+- List section titles before reading sections; do not guess source line ranges. CLI `sections` defaults to a title outline and MCP returns a title tree. Read by exact title or full heading path; preserve ID/label selection, explicit ambiguity errors, exact source ranges, and source-hash checks for stale reads.
+- Keep default CLI output as readable text, with titles and term names as the primary choices. CLI `--json` and MCP use the shared concise retrieval presentation. Do not expose index internals such as cache paths, versions, hashes, line ranges, parser identifiers, or outgoing records in these outputs. Preserve actionable candidates, original content, and partial-result issues. Explicit CLI `--debug` and the Node API retain full records; `--debug` takes precedence over `--json`.
+- Read whole glossaries by file and owning section title or heading path. Preserve listed IDs for unlabeled or indistinguishable glossaries and batch selections. Never select the first match when a title or path is ambiguous.
 - Refresh saved-file snapshots on queries, reuse unchanged parsed records, and preserve cache locking, cancellation-aware waits, and serialized requests. Do not store full document bodies or ASTs in the persistent cache.
 - Preserve typed AND search filters, deterministic term selection, request order, deduplication of identical selections, and successful items in partial reads. Report `complete: false` with diagnostics or per-item errors when results are partial.
 - Keep MCP stdout protocol-only and launch errors on stderr. Requests cannot change the server root. SDK validation errors may have text content without `structuredContent`; handle both response forms.

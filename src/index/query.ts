@@ -17,15 +17,19 @@ export const querySchemas = {
   }).refine(value => !!(value.tags?.length || value.hasProperty?.length || value.where !== undefined), 'At least one tag or property filter is required'),
   backlinks: z.strictObject({ file, term: text.optional() }),
   sections: z.strictObject({ file }),
-  'read-section': z.strictObject({ file, id: text.optional(), label: text.optional(), includeChildren: z.boolean().optional(), sourceHash: text.optional() })
-    .refine(value => !!value.id !== !!value.label, 'Specify exactly one id or label'),
+  'read-section': z.strictObject({ file, title: text.optional(), headingPath: z.array(text).min(1).optional(),
+    id: text.optional(), label: text.optional(), includeChildren: z.boolean().optional(), sourceHash: text.optional() })
+    .refine(value => [value.title, value.headingPath, value.id, value.label].filter(value => value !== undefined).length === 1, 'Specify exactly one title, headingPath, id or label'),
   tables: sectionScope,
   images: sectionScope,
   glossaries: z.strictObject(scope),
   terms: z.strictObject({ ...scope, glossary: text.optional(), name: text.optional() }),
   'read-term': z.strictObject({ ids: ids.optional(), names: z.array(text).min(1).optional(), ...scope, sourceHash: text.optional() })
     .refine(value => !!value.ids !== !!value.names && !(value.ids && value.file), 'Specify names or ids; file only applies to names'),
-  'read-glossary': z.strictObject({ ids }),
+  'read-glossary': z.strictObject({ ids: ids.optional(), ...scope, title: text.optional(), headingPath: z.array(text).min(1).optional() })
+    .refine(value => value.ids ? !value.file && !value.title && !value.headingPath
+      : !!value.file && Number(value.title !== undefined) + Number(value.headingPath !== undefined) === 1,
+    'Specify ids OR a file with exactly one title or headingPath'),
   read: z.strictObject({ ids }),
 };
 export type QueryCommand = keyof typeof querySchemas;
@@ -79,7 +83,9 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
         if (!tags.every(tag => document.tags.some(t => t.normalized === tag || (!args.exactTag && t.normalized.startsWith(tag + '/'))))) return false;
         if (!(args.hasProperty ?? []).every(property => Object.hasOwn(document.properties, property))) return false;
         return Object.entries(args.where ?? {}).every(([property, wanted]) => Object.hasOwn(document.properties, property) && (Array.isArray(document.properties[property]) ? (document.properties[property] as unknown[]).some(v => v === wanted) : document.properties[property] === wanted));
-      }).map(document => ({ file: document.file, sourceHash: document.sourceHash, properties: document.properties, tags: document.tags, aliases: document.aliases,
+      }).map(document => ({ file: document.file,
+        title: typeof document.properties.title === 'string' ? document.properties.title : document.sections.find(section => section.title)?.title ?? document.file.replace(/\.(?:md|markdown)$/i, ''),
+        sourceHash: document.sourceHash, properties: document.properties, tags: document.tags, aliases: document.aliases,
         sectionCount: document.sections.length, tableCount: document.tables.length, imageCount: document.images.length, glossaryCount: document.glossaries.length, termCount: document.terms.length,
         outgoing: document.outgoing, diagnostics: document.diagnostics }));
       return envelope({ root: index.root, notes });
@@ -89,7 +95,7 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
       return envelope({ file: document.file, sourceHash: document.sourceHash, sections: document.sections });
     }
     case 'read-section': {
-      const args = query.arguments, document = index.document(args.file), section = index.section(document, args.id, args.label);
+      const args = query.arguments, document = index.document(args.file), section = index.section(document, args.id, args.label, args.title, args.headingPath);
       const includeChildren = args.includeChildren !== false;
       const endLine = includeChildren ? section.endLine : section.ownEndLine;
       const content = index.read({ ...section, file: document.file, sourceHash: document.sourceHash }, args.sourceHash, endLine);
@@ -124,11 +130,28 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
       const args = query.arguments, termArgs = query.command === 'read-term' ? query.arguments : undefined;
       const terms = documents.flatMap(d => d.terms), glossaries = documents.flatMap(d => d.glossaries);
       const file = termArgs?.file ? index.document(termArgs.file).file : undefined;
-      const selectors = args.ids ?? termArgs!.names!;
+      let glossaryIds: string[] | undefined;
+      if (query.command === 'read-glossary' && !query.arguments.ids) {
+        const { title, headingPath } = query.arguments, document = index.document(query.arguments.file!);
+        const matches = document.glossaries.filter(glossary => title !== undefined
+          ? glossary.headingPath.at(-1) === title : JSON.stringify(glossary.headingPath) === JSON.stringify(headingPath));
+        if (!matches.length) throw new IndexError('glossaryNotFound', 'No glossary belongs to that section. List glossaries again.');
+        if (matches.length > 1) {
+          const paths = new Map<string, number>();
+          for (const glossary of matches) { const key = JSON.stringify(glossary.headingPath); paths.set(key, (paths.get(key) ?? 0) + 1); }
+          throw new IndexError('ambiguousGlossary', 'Multiple glossaries match. Select a headingPath, or an id when paths are identical.', matches.map(glossary => ({
+            file: glossary.file, title: glossary.headingPath.at(-1), headingPath: glossary.headingPath,
+            ...(paths.get(JSON.stringify(glossary.headingPath))! > 1 ? { id: glossary.id } : {}),
+          })));
+        }
+        glossaryIds = [matches[0].id];
+      }
+      const selectionIds = args.ids ?? glossaryIds;
+      const selectors = selectionIds ?? termArgs!.names!;
       const candidates = (selector: string) => terms.filter(t => t.identifier === termIdentifier(selector) && (!file || t.file === file));
       const pool = query.command === 'read-term' ? terms : query.command === 'read-glossary' ? glossaries : [...terms, ...glossaries];
       const selected = selectors.map(selector => {
-        if (args.ids) return pool.find(item => item.id === selector);
+        if (selectionIds) return pool.find(item => item.id === selector);
         const matches = candidates(selector); return matches.length === 1 ? matches[0] : undefined;
       });
       if (termArgs?.sourceHash && new Set(selected.filter(Boolean).map(item => item!.file)).size > 1) throw new IndexError('invalidArguments', '--source-hash requires selections in one document.');
@@ -138,7 +161,7 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
         if (seen.has(identity)) continue; seen.add(identity);
         try {
           if (!item) {
-            const matches = args.ids ? [] : candidates(selector);
+            const matches = selectionIds ? [] : candidates(selector);
             throw new IndexError(matches.length ? 'ambiguousTerm' : query.command === 'read-glossary' ? 'glossaryNotFound' : query.command === 'read' ? 'itemNotFound' : 'termNotFound', matches.length ? `Multiple definitions match: ${selector}` : `Item was not found: ${selector}`, matches.length ? matches : undefined);
           }
           items.push({ kind: 'glossaryId' in item ? 'term' : 'glossary', ...item, status: 'ok', content: index.read(item, termArgs?.sourceHash) });

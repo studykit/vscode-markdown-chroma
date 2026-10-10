@@ -2,14 +2,15 @@
 
 The CLI finds notes in Markdown and MyST projects, lists their sections, tables, images, glossaries, and terms, and reads the original source of selected sections, term definitions, or glossaries. It stores an index on disk for tag and frontmatter property searches and backlink queries. The goal is to retrieve content through document structure and meaningful content items, so an LLM can select what to read without guessing line numbers.
 
-Status: implementation specification for CLI v1. The decisions below define the v1 scope and resolve the proposals from the initial draft.
+Status: specification for the implemented CLI v1 behavior. Default CLI text, CLI `--json`, and MCP responses follow the retrieval contract below; detailed index records are a separate programmatic interface.
 
 ## Scope
 
 - Provide the CLI first. The [MCP guide](MCP.md) describes the shared query API, MCP servers, and VS Code MCP provider integration. A separate query UI is future work.
 - Provide tag and property searches, backlink indexing, and disk persistence.
 - Use the same core for CLI `watch` and MCP background watchers to detect saved-file changes and invoke the existing incremental refresh.
-- List sections and extract the original source of selected sections.
+- Keep default CLI text, CLI `--json`, and MCP responses focused on finding, selecting, and reading content. Retain full index records in the Node API and explicit CLI `--debug` output.
+- List section titles as an outline by default and extract selected sections by title or full heading path. Read term definitions by name and whole glossaries by their owning section title. Retain ID/label selectors for ambiguity and detailed records through `--debug`.
 - List tables and images.
 - Index MyST `glossary` blocks and term definitions, and resolve `{term}` references.
 - List glossaries and terms across the root without requiring a file argument. Read definition source directly by term name or by an ID returned in a list.
@@ -40,7 +41,7 @@ The CLI reads saved file contents. Unsaved edits in VS Code are outside this sco
 - Reuse the existing refresh after events. Check the full file list and source, configuration, and bibliography hashes, but reparse only changed documents. Resolve links and backlinks again.
 - Refresh every 30 seconds by default to cover missed OS events, watcher failures, and directory replacement. Retain full hash checks at query time.
 - CLI watch options `--debounce-ms` and `--poll-interval-ms` accept integers from 1 through 2147483647. MCP servers use the defaults.
-- Write the startup snapshot and subsequent snapshots with a changed generation to stdout as index-result JSON Lines with `event: "indexed"`. Include diagnostics in the result. Report watcher failures on stderr and retry.
+- Write a text update at startup and after each changed generation, for example `Indexed 12 documents.` Add `--json` for concise JSON Lines such as `{"event":"indexed","complete":true,"documents":12}`, or `--debug` for refresh metadata: schema version, root and cache paths, generation, document count, parsing statistics, and optional diagnostics. This event does not contain all document records. Mark partial text updates as `(partial)` and report issues on stderr. Concise JSON events retain `complete` and `issues`. Report watcher failures on stderr and retry; keep watching after a partial refresh.
 - On SIGINT, SIGTERM, or stdio EOF, release timers and watchers and cancel pending cache lock waits. Do not interrupt synchronous parsing already in progress.
 
 ## Parsing mixed syntax
@@ -105,8 +106,11 @@ markdown-chroma search --root ./docs --tag project --where '{"status":"draft"}'
 # Find incoming links to a document
 markdown-chroma backlinks guide.md --root ./docs
 
-# List sections, then read by ID or MyST heading label
+# List section titles, then read by title, full path, ID, or MyST heading label
 markdown-chroma sections guide.md --root ./docs
+markdown-chroma read-section guide.md --root ./docs --title 'Installation'
+markdown-chroma read-section guide.md --root ./docs --heading-path '["Installation","macOS"]'
+markdown-chroma sections guide.md --root ./docs --debug
 markdown-chroma read-section guide.md --root ./docs --id installation
 markdown-chroma read-section guide.md --root ./docs --label setup
 markdown-chroma read-section guide.md --root ./docs --id installation --no-children
@@ -135,46 +139,94 @@ markdown-chroma read-term --id 'glossary.md#term-myst-markdown' --root ./docs
 
 # Restrict the document scope or include definition metadata
 markdown-chroma read-term 'MyST Markdown' --root ./docs --file glossary.md
-markdown-chroma read-term 'MyST Markdown' --root ./docs --json
+markdown-chroma read-term 'MyST Markdown' --root ./docs --debug
 
 # Read multiple definitions or entire glossaries
 markdown-chroma read-term 'AST' 'MyST Markdown' --root ./docs
+markdown-chroma read-glossary glossary.md --title 'Authoring terms' --root ./docs
+markdown-chroma read-glossary glossary.md --heading-path '["Guide","Authoring terms"]' --root ./docs
 markdown-chroma read-term --root ./docs --id 'glossary.md#term-ast' --id 'syntax.md#term-role'
 markdown-chroma read-glossary --root ./docs --id 'glossary.md#glossary-1' --id 'syntax.md#glossary-1'
 
 # Read terms and glossaries together
-markdown-chroma read --root ./docs --id 'glossary.md#term-ast' --id 'syntax.md#glossary-1' --json
+markdown-chroma read --root ./docs --id 'glossary.md#term-ast' --id 'syntax.md#glossary-1'
 
 # Find references to a term definition
 markdown-chroma backlinks glossary.md --root ./docs --term term-myst-markdown
 ```
 
-List, search, backlink, and index refresh commands return JSON by default. `read-section`, `read-term`, `read-glossary`, and `read` return original Markdown source by default; `--json` returns item metadata together with source. Write progress messages and diagnostics to stderr so stdout contains only result data.
+`sections` returns a title outline by default. Other list, search, backlink, and index refresh commands return readable text. `read-section`, `read-term`, `read-glossary`, and `read` return original Markdown source by default. `--json` returns concise retrieval JSON with the same information as MCP. `--debug` returns detailed JSON records for troubleshooting and takes precedence over `--json`. Write issues and failures to stderr so stdout contains only result data.
 
-Use `--cache-dir` to change the index storage location. `--help` provides commands, arguments, defaults, and examples. JSON results include `schemaVersion`.
+Use `--cache-dir` to change the index storage location. `--help` provides commands, arguments, defaults, and examples. Full JSON records include `schemaVersion`; retrieval responses do not expose it.
+
+### Retrieval response contract
+
+CLI default text and concise JSON use the shared presentation layer. CLI `--json` and MCP tool results share the same structured retrieval format. They expose content choices, source files, and original source. Examples labeled as full records apply only to the Node API and CLI `--debug`.
+
+| Query | Retrieval result |
+| --- | --- |
+| Index refresh | Document count |
+| Notes and search | File and title |
+| Sections | CLI title outline; CLI `--json` and MCP title tree with optional `children` |
+| Backlinks | Source file, owning heading path, reference kind and text |
+| Tables | File, owning heading path, caption and headers; mark external data |
+| Images | File, owning heading path, source, alt text and caption; mark missing files |
+| Glossaries | Owning section title, file and term count; JSON also retains selection IDs and paths for duplicates |
+| Terms | Selection ID, name and file |
+| Section read | File and original content |
+| Batch reads | Kind, file, optional name and original content; failed selections retain errors |
+
+JSON retrieval results retain `complete` and actionable `issues` or error `candidates`. They omit schema/parser versions, root/cache paths, generations, parsing statistics, hashes, line ranges, normalized identifiers, and outgoing records. Selection IDs are exposed when needed for an actual read. Internal source-hash checks remain in force; callers requiring an explicit snapshot check can obtain hashes through the Node API or CLI `--debug`.
+
+The default text output leads with titles and term names. Notes show a title and file; terms show a name and file. Glossaries show their owning section title, file, and term count. Use titles or names for normal reads. Show glossary IDs in text only when no heading is available or several glossaries share the same heading path. Empty lists report that no matching items were found; an empty section outline remains empty.
+
+`notes` and `search` choose a document title from a string-valued frontmatter `title`, then the first nonempty section title, then the root-relative file path without its Markdown extension. Their text and retrieval JSON contain only files and titles; searching properties does not add those properties to the response.
+
+`notes --json` output:
+
+```json
+{
+  "complete": true,
+  "notes": [{ "file": "guide.md", "title": "Installation guide" }]
+}
+```
+
+`terms --json` output:
+
+```json
+{
+  "complete": true,
+  "terms": [{ "id": "glossary.md#term-ast", "name": "AST", "file": "glossary.md" }]
+}
+```
+
+Read the selected definition with `read-term 'AST'`, or use its listed ID to disambiguate. Term lists do not include definition bodies; read commands return them.
+
+Backlink, table, and image locations use the owning `headingPath`. For content before any heading, return `sectionId: "preamble"` instead so callers can read it with `--id preamble`. Omit optional fields without a value, such as an absent caption. `externalData` and `missing` appear only when true.
 
 ### Glossary and term workflow
 
-Select a glossary first or query terms across the root directly. The IDs below illustrate values returned by list commands. In actual use, pass the returned IDs unchanged to the next command.
+Find terms by name for a specific definition. Read a whole glossary when related terms need to be understood together. A glossary groups shared definitions for MyST `{term}` references; it is not a prerequisite for section or document retrieval.
 
 ```sh
 # 1. List glossaries across the root
 markdown-chroma glossaries --root ./notes
 
-# 2. List terms in a selected glossary
+# 2. List term names in a document
+markdown-chroma terms glossary.md --root ./notes
+
+# 3. Read a selected definition by name
+markdown-chroma read-term 'AST' --file glossary.md --root ./notes
+
+# Read all terms in a glossary by its owning section title
+markdown-chroma read-glossary glossary.md --title 'Authoring terms' --root ./notes
+
+# Read several definitions by name
+markdown-chroma read-term 'AST' 'Role' --root ./notes
+
+# Advanced selections: use actual listed IDs for glossary filtering or mixed reads
 markdown-chroma terms --root ./notes --glossary 'glossary.md#glossary-1'
-
-# 3. Read a selected definition
-markdown-chroma read-term --root ./notes --id 'glossary.md#term-ast'
-
-# Select multiple definitions
-markdown-chroma read-term --root ./notes --id 'glossary.md#term-ast' --id 'syntax.md#term-role'
-
-# Select multiple entire glossaries
-markdown-chroma read-glossary --root ./notes --id 'glossary.md#glossary-1' --id 'syntax.md#glossary-1'
-
-# Select terms and glossaries in one request
-markdown-chroma read --root ./notes --id 'glossary.md#term-ast' --id 'syntax.md#glossary-1' --json
+markdown-chroma read --root ./notes --id 'glossary.md#term-ast' --id 'syntax.md#glossary-1'
 
 # Query terms across the root without selecting a glossary
 markdown-chroma terms --root ./notes
@@ -201,7 +253,7 @@ Resolve Obsidian bare-filename links in this order: the source folder, the proje
 
 Return candidates when multiple targets match; do not select one automatically. Exclude external URLs from document backlinks. Embeds use the same target resolution as ordinary links but have `kind: "embed"`. Wikilinks in frontmatter properties are excluded from v1 backlinks.
 
-Each backlink provides:
+Default backlink results provide the source file, owning heading path (or preamble selector), reference `kind`, and original link `text`. Full backlink records from `backlinks --debug` or the Node API additionally provide:
 
 - Source file, source section ID and heading path, and source position
 - Reference kind and original link text
@@ -210,21 +262,31 @@ Each backlink provides:
 
 Store `{term}` references with `kind: "term"` and resolve them to term definition items. `backlinks <file> --term <id>` returns only references to that definition in the specified document. Default document backlink results also include term references. Preserve the distinction between display text and the actual target name when a term reference changes its display name.
 
-Retain unresolved and ambiguous references in the outgoing index. `notes --unresolved` returns documents containing them, and results include individual reference diagnostics. When the file is found but its block fragment is unsupported, retain the file-level backlink and set the fragment status to `notIndexed`.
+Retain unresolved and ambiguous references in the outgoing index. `notes --unresolved` returns the files and titles of documents containing them. Inspect `notes --unresolved --debug` or the Node API for individual outgoing references and their resolution statuses. When the file is found but its block fragment is unsupported, retain the file-level backlink and set the fragment status to `notIndexed` in the full record.
 
 ## Section lists
 
-`sections <file>` returns sections in document order. Include the display title derived from heading source, heading path, level, unique ID, MyST heading labels, and source start and end lines. Line numbers are one-based and inclusive.
+`sections <file>` prints only section titles in document order, with two spaces of indentation for each ancestor heading. Use the display title derived from heading source, without its Markdown formatting. Do not print IDs, repeated heading paths, line ranges, or hashes in the default outline.
+
+```text
+Installation
+  macOS
+```
+
+`sections <file> --debug` returns the complete records used by the shared Node API: display title, heading path, level, unique ID, MyST heading labels, source start and end lines, `ownEndLine`, and the document's `sourceHash`. Line numbers are one-based and inclusive. CLI `--json` and MCP section lists expose title trees without this internal metadata.
 
 v1 exposes document-level ATX and Setext headings as sections. Exclude headings inside code. Headings inside callouts or directives belong to the body of the section containing that container and are not independent sections. Exposing those inner headings separately is future work.
 
-If body content precedes the first heading, provide a `preamble` item. Frontmatter belongs to property queries and is excluded from the preamble. A document without headings has one `preamble` containing its entire body. An empty document has no sections.
+If body content precedes the first heading, provide a `preamble` item. Frontmatter belongs to property queries and is excluded from the preamble. A document without headings has one `preamble` containing its entire body. The outline displays this titleless item as `[preamble]`; read it with `--id preamble`. An empty document has no sections and produces no outline.
 
 Generate IDs from heading slugs and use suffixes to distinguish duplicates. Avoid collisions with reserved IDs such as `preamble`. IDs are unique within the current document but are not guaranteed to survive edits unchanged. Expose MyST labels separately and support them as `--label` lookup keys.
+
+Full-record example for `sections guide.md --debug`:
 
 ```json
 {
   "schemaVersion": 1,
+  "complete": true,
   "file": "guide.md",
   "sourceHash": "sha256:...",
   "sections": [
@@ -235,7 +297,8 @@ Generate IDs from heading slugs and use suffixes to distinguish duplicates. Avoi
       "headingPath": ["Installation"],
       "labels": ["setup"],
       "startLine": 3,
-      "endLine": 14
+      "endLine": 14,
+      "ownEndLine": 7
     },
     {
       "id": "macos",
@@ -244,7 +307,8 @@ Generate IDs from heading slugs and use suffixes to distinguish duplicates. Avoi
       "headingPath": ["Installation", "macOS"],
       "labels": [],
       "startLine": 8,
-      "endLine": 14
+      "endLine": 14,
+      "ownEndLine": 14
     }
   ]
 }
@@ -254,33 +318,40 @@ A parent section extends to just before the next heading at the same or a higher
 
 ## Section source extraction
 
-Select a section with `read-section <file> --id <id>` or `--label <label>`. These selectors are mutually exclusive. If a label targets a figure, math block, or another non-heading item, return a section selection error identifying the target kind. Block extraction is a separate feature.
+Select a section with `read-section <file> --title <title>`. Match the exact, case-sensitive display title returned by the outline. If several sections have the same title, return `ambiguousSection` with candidate titles and full heading paths. Use `--heading-path '["Parent","Child"]'` to select one full path. Preserve individual title strings rather than interpreting separator characters within titles.
+
+If a full heading path matches multiple sections, include their IDs in the candidates and require an explicit ID selection. Do not select the first match automatically. `--id <id>` and `--label <label>` remain supported; exactly one of title, heading path, ID, or label is required. The shared Node API and MCP `read_section` accept the same selectors as `title`, `headingPath`, `id`, and `label`. If a label targets a figure, math block, or another non-heading item, return a section selection error identifying the target kind. Block extraction is a separate feature.
 
 By default, return source including the heading and child sections. With `--no-children`, stop before the first child heading. If the parent body is empty, return only its labels and heading. Preserve directive, callout, link, math, and code source without rendering or converting syntax.
 
 Return `{include}` and Obsidian embeds as their original reference syntax without expanding target files. Do not append footnote or link definitions outside the section automatically. Read the source document separately when needed.
 
-Check the latest file contents and use their current source positions. Pass the `sourceHash` returned by `sections` through `--source-hash` to reject changed documents with `documentChanged`, requiring a new list query. Never use stale index line positions to return unrelated content.
+Check the latest file contents and use their current source positions. Pass the `sourceHash` returned by `sections --debug` through `--source-hash` to reject changed documents with `documentChanged`, requiring a new list query. Never use stale index line positions to return unrelated content.
 
-The `--json` result includes the file, section metadata, `sourceHash`, actual returned range, `includeChildren`, and `content`. Preserve the original line endings.
+The `--debug` result includes the file, section metadata, `sourceHash`, actual returned range, `includeChildren`, and `content`. Preserve the original line endings.
 
 ## Table and image lists
 
 Use `tables [file]` and `images [file]` to discover content items. Omitting the file queries the whole project, ordered by file path and source position. `--section <id>` requires a file argument and returns items in the selected section and its descendants. Tables and images inside layout containers remain in the lists even though the containers have no records of their own.
 
-Common fields include item ID, source file, owning section ID and heading path, MyST labels, source range, and document hash. Assign document-local IDs such as `table-1` and `image-1` to unlabeled items. IDs select items in the current document and are not guaranteed to remain unchanged after editing. v1 table and image commands list items; read the owning section for their source. A command to extract one item's source is future work.
+The optional `--section` filter accepts a document-local section ID from `sections --debug`. Title and full-path selectors apply to `read-section`. The usual retrieval workflow is to list tables or images, then read their owning section by its title or `headingPath`.
+
+Default lists include file and owning heading path together with the content fields described in the retrieval contract. Full records additionally include item ID, owning section ID, MyST labels, source range, and document hash. Assign document-local IDs such as `table-1` and `image-1` to unlabeled items. These IDs identify records in the current document and are not guaranteed to remain unchanged after editing. v1 table and image commands list items; a command to extract one item's source is future work.
 
 ### Tables
 
 Include ordinary Markdown pipe tables, MyST `table` and `list-table`, `csv-table` with inline data, and `figure` with `kind: table`. Do not count both a table container and its inner AST `table` node as separate tables.
 
-Include syntax kind, caption, header text, and row and column counts. Row counts include header rows; report the header row count separately. Return null for values the parser cannot determine. Preserve captions, labels, and the source range of the entire directive.
+Default table lists include available captions and headers. Full records also include syntax kind, row and column counts, labels, and source ranges. Row counts include header rows; report the header row count separately. Return null for dimensions the parser cannot determine. Preserve the source range of the entire directive.
 
 Retain declarations referencing external CSV files or notebook output with `contentStatus: "referenceOnly"`. Do not execute, download, or expand their data to calculate dimensions. Tables with data directly in the source have `contentStatus: "inline"`.
+
+Text lists mark reference-only tables as `(external data)`; concise JSON uses `externalData: true`. Full-record example for `tables guide.md --debug`:
 
 ```json
 {
   "schemaVersion": 1,
+  "complete": true,
   "tables": [
     {
       "id": "table-1",
@@ -307,21 +378,21 @@ Retain declarations referencing external CSV files or notebook output with `cont
 
 Include Markdown `![alt](source)` and reference-style images, images in MyST `image` and `figure` directives, and Obsidian image embeds. Include only embeds recognized as images; distinguish them from note embeds.
 
-Include reference syntax, original image path or URL, alt text, and labels attached to the image itself. Resolve ordinary Markdown and MyST local paths relative to the source file, and Obsidian image embeds using wikilink rules. Provide the resolved project-relative path and existence status. Do not download external URLs to analyze image contents.
+Default image lists include the parser-normalized path or URL as `source`, available alt text and figure caption, and `missing: true` when a local file is missing. Markdown and MyST URL normalization can encode Unicode hostnames and path characters; source reads retain the author's original text. Full records also include reference syntax, image labels, the resolved project-relative path, and resolution status. Resolve ordinary Markdown and MyST local paths relative to the source file, and Obsidian image embeds using wikilink rules. Do not download external URLs to analyze image contents.
 
-Record each occurrence separately when the same image appears multiple times. For images in a figure, include the figure ID, labels, and caption as related metadata. Identify figures containing multiple images as groups; do not count the figure container as an additional image.
+Record each occurrence separately when the same image appears multiple times. For images in a figure, full records include the figure ID, labels, and caption as related metadata. Identify figures containing multiple images as groups; do not count the figure container as an additional image.
 
-Record declared dimensions when needed rather than inspecting image files. Check local image existence when listing and distinguish external images whose existence has not been queried. v1 lists references and structure; it does not perform OCR or describe image contents.
+Check local image existence when listing and distinguish external images whose existence has not been queried. v1 does not return image dimensions, inspect image files, perform OCR, or describe image contents.
 
 ## Glossary and term indexing
 
 Index MyST `glossary` directives as content items. Connect each `definitionTerm` to its corresponding `definitionDescription` to index term definitions. Preserve source ranges for definitions containing multiple paragraphs, lists, tables, or images. Definition lists in ordinary body content are not automatically glossary terms.
 
-`glossaries [file]` lists glossaries in every document under the root when the file is omitted. The optional file argument limits the scope. Each item includes a root-wide ID, document-local ID, source file, owning section and heading path, MyST labels, term count, directive source range, and document hash. Distinguish multiple glossaries in one document, including unlabeled glossaries.
+`glossaries [file]` lists glossaries in every document under the root when the file is omitted. The optional file argument limits the scope. Text lists lead with the owning section title. Concise JSON includes a root-wide selection ID, file, owning `title` when available, optional name, and term count as `terms`; repeated titles include `headingPath`. Full records use `termCount` and also include document-local ID, owning section and heading path, MyST labels, directive source range, and document hash. Distinguish multiple glossaries in one document, including unlabeled glossaries.
 
 `terms [file]` lists defined terms across the root when the file is omitted. Limit results to a document or glossary with a file argument or `--glossary <id>`. Root-wide queries use the global glossary IDs returned by lists; file-scoped queries also accept document-local IDs. `--name <name>` returns definitions matching MyST's term identifier normalization rules. Substring and natural-language semantic searches are outside v1.
 
-Each term item provides:
+Text term lists contain names and files. Concise JSON adds root-wide selection IDs for explicit disambiguation and batch selections. Full term records additionally provide:
 
 - Root-wide ID, document-local ID, and the term identifier generated by MyST
 - Original term name and display text
@@ -331,9 +402,12 @@ Each term item provides:
 
 Global IDs combine source file and document-local ID. For example, pass a listed `glossary.md#term-myst-markdown` unchanged to `read-term --id`. Encode separator characters in paths so users do not need to split IDs or specify the filename separately. Order results by file path and definition position within each document. Do not merge or omit terms with identical names in different documents.
 
+Full-record example for `terms --debug`:
+
 ```json
 {
   "schemaVersion": 1,
+  "complete": true,
   "terms": [
     {
       "id": "glossary.md#term-myst-markdown",
@@ -344,6 +418,7 @@ Global IDs combine source file and document-local ID. For example, pass a listed
       "glossaryId": "glossary.md#glossary-1",
       "sectionId": "authoring-terms",
       "headingPath": ["Authoring terms"],
+      "labels": [],
       "startLine": 12,
       "endLine": 17,
       "sourceHash": "sha256:..."
@@ -364,19 +439,23 @@ Abbreviations, index directives and roles, and show-index are separate from glos
 
 Return the original Markdown for the term name and its associated definition. Include the entire definition even when it contains multiple paragraphs, lists, tables, or images, but exclude the next term's definition. Reading the outer glossary directive or entire owning section is unnecessary. Preserve original line endings and syntax without expanding includes or embeds.
 
-If a name matches multiple definitions, return `ambiguousTerm` with each candidate's global ID, name, source file, and glossary metadata. The user can query again using a candidate ID. If no definition matches, return `termNotFound`.
+If a name matches multiple definitions, return `ambiguousTerm` with candidate IDs, names, and files. Full-record errors also retain glossary and definition metadata. The user can query again using a candidate ID. If no definition matches, return `termNotFound`.
 
-`--json` uses the multi-item result format below. Extract definition source from files at read time; do not persist full bodies in the disk index. For items from one document, `--source-hash` provides the same document-change check as section reads. Do not apply one hash to items selected from different documents.
+`--debug` uses the multi-item result format below. Extract definition source from files at read time; do not persist full bodies in the disk index. For items from one document, `--source-hash` provides the same document-change check as section reads. Do not apply one hash to items selected from different documents.
 
 ## Reading entire glossaries and multiple items
 
-`read-glossary --id <id>` reads an entire glossary using a global ID from `glossaries`. Repeat `--id` to select multiple glossaries, including those in different files. Return MyST labels, opening and closing glossary directive syntax, and all enclosed term definitions unchanged.
+`read-glossary <file> --title <title>` reads a glossary whose owning section has that exact, case-sensitive title. Match the directly owning section, excluding glossaries in child sections. If several glossaries match the title, return `ambiguousGlossary` with candidate full heading paths; select one with `--heading-path '["Parent","Terms"]'`. If several glossaries share that path, include their global IDs and require explicit ID selection. A missing match returns `glossaryNotFound`.
+
+`read-glossary --id <id>` remains available for an unheaded or indistinguishable glossary and for batch selections. Repeat `--id` to select multiple glossaries, including those in different files. IDs cannot be combined with a file or title/path selector. The Node API and MCP `read_glossaries` accept `ids` OR `file` with exactly one `title` or `headingPath`. Return MyST labels, opening and closing glossary directive syntax, and all enclosed term definitions unchanged.
 
 `read --id <id>` determines each selected item's kind from the index and supports terms and glossaries in the same request. These are the supported kinds in v1. Read sections with `read-section`; individual table and image source reads remain future work. Use `read-term` to restrict the kind and select by name.
 
 Return multiple items in request order. Deduplicate repeated IDs at their first position. A glossary and a term within it are distinct items, so selecting both returns both. Do not remove overlapping content automatically.
 
-The default output for one item is its source. For multiple items, Markdown output prefixes each item with its kind, name, source file, and ID to show boundaries, while preserving its `content` unchanged. `--json` uses an `items` array for both single and multiple selections. Each item provides `kind`, ID, name, source file, membership metadata, source range, document hash, status, and `content`.
+The default output for one item is its source. For multiple items, Markdown output prefixes each item with its kind, name, and source file to show boundaries, while preserving its `content` unchanged. `--debug` uses an `items` array for both single and multiple selections. Each full-record item provides `kind`, ID, name, source file, membership metadata, source range, document hash, status, and `content`.
+
+The following full-record example shows the read metadata; other fields inherited from the selected term or glossary record are omitted for brevity:
 
 ```json
 {
@@ -427,14 +506,19 @@ Write a complete index to a temporary file and replace it atomically. Use locks 
 
 ## Errors and diagnostics
 
-Successful queries and empty search results exit with code 0. Invalid arguments, missing files, sections or terms, ambiguous selections, document changes, and index persistence failures exit with a nonzero code. `--json` provides machine-readable error codes and messages.
+Successful queries and empty search results exit with code 0. Invalid arguments, missing files, sections or terms, ambiguous selections, document changes, and index persistence failures exit with a nonzero code. `--json` provides concise machine-readable errors; `--debug` adds full error details.
+
+Default CLI errors and readable candidate lists go to stderr, leaving stdout for successful text or source. With `--json`, query errors have `complete: false` and an `error` containing `code`, `message`, and optional `candidates`. Batch read errors remain beside successful items. Explicit `--debug` includes full errors under `error` (or per-item errors in batch reads), with `schemaVersion` and optional `details`. All query failures also write a message to stderr.
+
+Partial JSON retrieval results include `issues` with file and message; full records use `diagnostics` with codes, source positions when available, and severity. Plain outlines and reads report these issues on stderr. Retain successful selections when a batch read is partial. Do not remove authored text merely because it contains an internal field name.
 
 During project queries, report YAML or MyST syntax errors and read failures as document diagnostics. Set `complete: false` and exit with a nonzero code to indicate omissions. Limit each document, configuration, and bibliography file to 2 MiB; report oversized files as diagnostics. Unresolved references alone do not make results partial, so retain their status in a normal index. Use exit code 0 for successful queries, 1 for partial results or query failures, and 2 for invalid arguments. For external table declarations unsupported by the installed parser, preserve available declaration metadata as `referenceOnly` and include syntax diagnostics.
 
 ## Validation criteria
 
 - Index documents mixing ordinary Markdown, MyST, and Obsidian syntax in a project without a configuration directory.
-- Ensure programs can consume default JSON output directly and diagnostics never mix into stdout.
+- Ensure default CLI output is readable text, `--json` is directly consumable retrieval JSON, and `--debug` exposes detailed records. Keep prose diagnostics out of stdout and preserve section title hierarchy.
+- Verify CLI `--json` and MCP retrieval responses contain no internal index fields, while full Node API and CLI `--debug` records retain their contracts. Preserve original source, selection candidates, and partial-result issues.
 - Verify tags, typed property comparisons, array membership, property existence, and combined conditions.
 - Exclude example links and tags in code, math, MyST comments, and HTML comments.
 - Collect actual references inside directives and callouts without duplicating repeated AST representations.
@@ -446,6 +530,7 @@ During project queries, report YAML or MyST syntax errors and read failures as d
 - List multiple glossaries with each definition's range and owning section, both per document and project-wide.
 - List terms across the root without selecting a file and read definitions directly using listed global IDs.
 - Verify name queries, document scope restrictions, and candidate results for identical names in different files.
+- Read glossaries by their owning title or full heading path, preserve original directive source, and require IDs when multiple glossaries share the same heading path.
 - Extract entire definitions containing multiple paragraphs, lists, tables, and images without including neighboring definitions.
 - Read multiple terms and glossaries from different documents while preserving request order, source, and item kind.
 - Preserve directive syntax and all definitions when reading entire glossaries; handle requests mixing terms and glossaries.
@@ -456,7 +541,8 @@ During project queries, report YAML or MyST syntax errors and read failures as d
 - Verify the distinction between wikilinks, embeds, ordinary links, MyST references, and citations, including ambiguous targets.
 - Refresh backlinks after modifications, deletions, renames, and alias or label changes.
 - Verify duplicate headings, labels, Korean headings, Setext headings, and preambles in section lists.
-- Verify section source ranges selected by ID or label, exclusion of child sections, and CRLF preservation.
+- Verify exact title reads, ambiguous titles, full-path selection, identical-path ID fallback, mutually exclusive selectors, and detailed `sections --debug` output.
+- Verify section source ranges selected by title, path, ID, or label, exclusion of child sections, and CRLF preservation.
 - Reject a read using an outdated section list when the supplied hash no longer matches the document.
 - Reuse persisted indexes across CLI processes and handle corruption, version changes, and concurrent refreshes.
 - Pass existing Markdown Chroma preview tests to detect regressions from shared module changes.
@@ -465,6 +551,9 @@ During project queries, report YAML or MyST syntax errors and read failures as d
 
 | Topic | Decision |
 | --- | --- |
+| Section listing and selection | CLI defaults to a title outline; detailed JSON remains available. Read by exact title or full path, with IDs for identical paths and MyST label support |
+| Retrieval responses | CLI defaults to readable text; `--json` and MCP expose concise retrieval information. Full records remain in the Node API and CLI `--debug` |
+| Glossary selection | Select the file and exact owning section title or path; retain global IDs for unheaded, indistinguishable, or batch selections |
 | Descendant tags | Included by default; `--exact-tag` excludes descendants |
 | Property search scope | Top-level property existence, equality, and array membership; range comparisons are future work |
 | Obsidian block IDs | Excluded from v1; retain file-level backlinks |

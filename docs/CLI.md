@@ -43,13 +43,30 @@ List a document's sections first:
 markdown-chroma sections guide.md --root ./notes
 ```
 
-Choose an ID or label from that response, then read it:
+The default output is a title outline:
 
-```sh
-markdown-chroma read-section guide.md --root ./notes --id '<section-id>'
+```text
+Installation
+  macOS
 ```
 
-Replace `<section-id>` with an actual listed ID. Section reads include child sections by default. Add `--no-children` for the selected section's own body, or `--source-hash '<listed-hash>'` to check that the document has not changed since listing. Reads return the original Markdown; add `--json` for metadata and `content`.
+Read a listed title with an exact, case-sensitive match:
+
+```sh
+markdown-chroma read-section guide.md --root ./notes --title 'Installation'
+```
+
+If a title appears more than once, the error lists candidate heading paths. Select the full path as a JSON array, including the selected title:
+
+```sh
+markdown-chroma read-section guide.md --root ./notes --heading-path '["Installation","macOS"]'
+```
+
+If the full path also appears more than once, candidates include IDs for those sections; use `--id` to select one. `--label` remains available for MyST heading labels. Specify exactly one of `--title`, `--heading-path`, `--id`, or `--label`.
+
+Section reads include child sections by default. Add `--no-children` for the selected section's own body. Reads return the original Markdown; add `--json` to receive the file and `content` as retrieval JSON.
+
+`sections ... --json` returns a title tree. For troubleshooting, `--debug` returns detailed section records, including IDs, labels, line ranges, and `sourceHash`. Pass that hash to `read-section ... --source-hash '<listed-hash>'` when the read must match the previous listing. A titleless preamble is shown as `[preamble]` and can be read with `--id preamble`; an empty document produces no outline.
 
 ## Explore tables, images, and terms
 
@@ -58,15 +75,38 @@ markdown-chroma tables --root ./notes
 markdown-chroma images --root ./notes
 markdown-chroma glossaries --root ./notes
 markdown-chroma terms --root ./notes
-markdown-chroma read-term 'AST' 'MyST Markdown' --root ./notes --json
+markdown-chroma read-term 'AST' 'MyST Markdown' --root ./notes
 ```
 
-Tables and images are listed with their positions and metadata. MyST glossaries, term definitions, and `{term}` references are indexed across the root. If several definitions have the same name, narrow the selection to a file or use the global IDs returned by the lists.
+Table lists show captions, headers, and the owning heading path. Image lists show sources, alt text, captions, and the owning heading path. Read that section for the surrounding content. MyST glossaries, term definitions, and `{term}` references are indexed across the root. If several definitions have the same name, narrow the selection to a file or use an ID from the ambiguity candidates or a `--json` list.
+
+Term lists show names and files:
+
+```text
+- AST (glossary.md)
+- Directive (glossary.md)
+```
+
+Read a definition by the name used in the document:
+
+```sh
+markdown-chroma read-term 'Directive' --root ./notes
+markdown-chroma read-term 'Directive' --file glossary.md --root ./notes
+```
+
+Use a glossary to keep shared definitions together and refer to them from multiple documents with MyST `{term}`. Reading one term is useful for a specific definition; reading the whole glossary gives the context of related terms. List glossaries, then select one by its owning section title:
+
+```sh
+markdown-chroma glossaries --root ./notes
+markdown-chroma read-glossary glossary.md --title 'Authoring terms' --root ./notes
+```
+
+Duplicate glossary titles can be selected with `--heading-path '["Guide","Authoring terms"]'`. If several glossaries share the same heading path, or a glossary has no owning heading, use an ID shown in the list or error candidates.
 
 You can read selected terms and glossaries together, using actual IDs from the list responses:
 
 ```sh
-markdown-chroma read --root ./notes --id '<term-id>' --id '<glossary-id>' --json
+markdown-chroma read --root ./notes --id '<term-id>' --id '<glossary-id>'
 ```
 
 Batch reads preserve your selection order and remove identical repeated selections. If an item cannot be read, successful items are still returned with errors for the missing items.
@@ -79,7 +119,7 @@ markdown-chroma watch --root ./notes
 
 Watch indexes once at startup, then groups save, creation, rename, and deletion events over 300 ms before refreshing. It covers Markdown, MyST configuration, bibliography, and attachment changes. A full hash scan every 30 seconds covers missed events. Stop it with `Ctrl+C`.
 
-Each refresh checks the file list and hashes, reusing unchanged parsed documents. Watch writes one JSON object per line for the initial snapshot and each changed snapshot, and writes failures to stderr. Change its timing with `--debounce-ms` and `--poll-interval-ms`:
+Watch writes text updates such as `Indexed 12 documents.` and writes issues or failures to stderr. Add `--json` for concise JSON Lines, or `--debug` for full refresh metadata. Change its timing with `--debounce-ms` and `--poll-interval-ms`:
 
 ```sh
 markdown-chroma watch --root ./notes --debounce-ms 300 --poll-interval-ms 30000
@@ -87,12 +127,23 @@ markdown-chroma watch --root ./notes --debounce-ms 300 --poll-interval-ms 30000
 
 Queries also refresh saved-file snapshots, so watch is optional. Unsaved edits belong to the VS Code preview and are not read by the CLI or MCP server.
 
-## Cache, output, and limits
+## Output
+
+| Option | Output |
+| --- | --- |
+| Default | Readable text lists, section title outlines, and original Markdown reads |
+| `--json` | Retrieval JSON with files, titles or names, selection choices, content, and partial-result issues; the same information as MCP |
+| `--debug` | Detailed JSON records for troubleshooting, including hashes, source ranges, parsing statistics, and cache paths where applicable |
+
+`--debug` takes precedence if both options are supplied. Ordinary queries return one JSON result; watch emits one JSON object per update. Default errors and ambiguous choices go to stderr; JSON errors retain codes and candidates.
+
+## Cache and limits
 
 - The cache lives in the user cache directory under `markdown-chroma`, separately for each root. Use `--cache-dir` to choose another location. `index --rebuild` reparses everything.
 - `.md` and `.markdown` documents are indexed. Hidden paths, `node_modules`, `_build`, symlinks, and the root's cache directory are excluded.
 - MyST configuration and document frontmatter apply to parsing. Source, configuration, and bibliography files each have a 2 MiB limit.
-- Lists and searches return JSON. Partial results have `complete: false` and exit code `1`; invalid arguments exit with code `2`. Diagnostics go to stderr.
+- Default responses and `--json` contain information for finding and reading content. Internal index records are available through `--debug` and the public Node API.
+- Partial results exit with code `1` and issues go to stderr; JSON results also have `complete: false`. Invalid arguments exit with code `2`. Ambiguous choices provide candidates for the next read.
 - Index support differs from preview support: Obsidian block IDs and `%%…%%` comments have no special index handling. External table data is neither executed nor downloaded.
 
 The [index specification](CLI-INDEX-SPEC.md) describes all commands, selection rules, records, and diagnostics. The [MCP guide](MCP.md) covers the same features for MCP clients and the public Node API.

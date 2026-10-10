@@ -23,6 +23,8 @@ const builds = [
 ].map(options => ({
   ...options, bundle: true, platform: 'node', format: 'cjs', target: 'node20',
   mainFields: ['module', 'main'],
+  // MyST's Markdown parser imports the deprecated Node builtin; bundle the npm implementation instead.
+  alias: { punycode: 'punycode/' },
   external: ['vscode', 'jsdom'], sourcemap: true, logLevel: 'info', metafile: true
 }));
 

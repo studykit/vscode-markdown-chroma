@@ -1,5 +1,6 @@
 import { IndexService, errorRecord, type IndexQuery, type QueryCommand } from './query';
 import { IndexError, SCHEMA_VERSION } from './types';
+import { formatCliResult, formatCliError, presentResult, presentError } from './presentation';
 
 const help = `Markdown Chroma — saved Markdown/MyST structure and reference index
 
@@ -8,24 +9,28 @@ Usage: markdown-chroma <command> [file or term names] [options]
   mcp                       Serve MCP over stdio or HTTP (mcp --help for options)
   index                     Create/update the disk index (--rebuild to reparse all)
   watch                     Index saved files on changes (watch --help for options)
-  notes                     List documents (--unresolved for unresolved references)
+  notes                     List files and titles (--unresolved for unresolved references)
   search                    AND filters: --tag, --where JSON, --has-property
   backlinks <file>           Incoming references (--term local-or-global-id)
-  sections <file>            List document-level headings, labels and source hash
-  read-section <file>        --id section-id OR --label MyST-label [--no-children]
+  sections <file>            List titles as an outline; --json returns a title tree
+  read-section <file>        --title title OR --heading-path JSON OR --id id OR --label label
   tables [file]              List tables [--section section-id with file]
   images [file]              List image occurrences [--section section-id with file]
   glossaries [file]          List glossary directives across the root or one file
   terms [file]              List definitions [--glossary id] [--name exact-name]
   read-term <name...>        Read definitions, optionally limited by --file
   read-term --id <id>...     Read selected definitions by global IDs
+  read-glossary <file>       Read a glossary by its owning --title or --heading-path
   read-glossary --id <id>... Read selected whole glossaries by global IDs
   read --id <id>...          Read mixed term/glossary selections in input order
 
 Global: --root <directory> (default: cwd), --cache-dir <directory>, --help
-Reads:  --json for metadata/content; --source-hash <hash> for read-section/read-term
+Output: text by default; --json for concise retrieval JSON; --debug for full records
+Reads:  --no-children for a section's own body
+        --source-hash <hash> for read-section/read-term (hash from sections --debug)
 Search: repeated --tag/--has-property; --exact-tag excludes subtags
-Lists/index/search return JSON (schemaVersion: 1). Reads default to raw Markdown.
+Sections default to a title outline. Other lists/index/search return readable text.
+Reads default to raw Markdown. Titles match exactly; duplicate titles require a heading path.
 Diagnostics go to stderr; partial results exit 1. Invalid arguments exit 2.
 Requires Node >=20. Source/config/bibliography limit: 2 MiB per file.
 Hidden paths, node_modules, _build and symlinks are excluded; .obsidian is unused.
@@ -33,25 +38,27 @@ Hidden paths, node_modules, _build and symlinks are excluded; .obsidian is unuse
 Examples:
   markdown-chroma index --root ./notes
   markdown-chroma sections guide.md --root ./notes
-  markdown-chroma read-section guide.md --id setup --no-children --root ./notes
+  markdown-chroma read-section guide.md --title 'Setup' --no-children --root ./notes
+  markdown-chroma read-section guide.md --heading-path '["Setup","macOS"]' --root ./notes
   markdown-chroma search --tag project --where '{"status":"draft"}' --root ./notes
   markdown-chroma terms --root ./notes
-  markdown-chroma read-term 'AST' 'MyST Markdown' --root ./notes --json
-  markdown-chroma read --id 'a.md#term-ast' --id 'b.md#glossary-1' --json
+  markdown-chroma read-term 'AST' 'MyST Markdown' --root ./notes
+  markdown-chroma read-glossary terms.md --title 'Authoring terms' --root ./notes
+  markdown-chroma read --id 'a.md#term-ast' --id 'b.md#glossary-1'
 `;
 const commands: Record<string, string[]> = {
   index: ['rebuild'], notes: ['unresolved'], search: ['tag', 'where', 'has-property', 'exact-tag'],
-  backlinks: ['term'], sections: [], 'read-section': ['id', 'label', 'no-children', 'source-hash'],
+  backlinks: ['term'], sections: [], 'read-section': ['id', 'label', 'title', 'heading-path', 'no-children', 'source-hash'],
   tables: ['section'], images: ['section'], glossaries: [], terms: ['glossary', 'name'],
-  'read-term': ['id', 'file', 'source-hash'], 'read-glossary': ['id'], read: ['id'],
+  'read-term': ['id', 'file', 'source-hash'], 'read-glossary': ['id', 'title', 'heading-path'], read: ['id'],
 };
-const flags = new Set(['help', 'json', 'rebuild', 'unresolved', 'exact-tag', 'no-children']);
+const flags = new Set(['help', 'json', 'debug', 'rebuild', 'unresolved', 'exact-tag', 'no-children']);
 const repeated = new Set(['id', 'tag', 'has-property']);
 interface Arguments { command: string; positional: string[]; values: Map<string, string[]> }
 function parseArguments(argv: string[]): Arguments {
   if (!argv.length || argv.includes('--help') || argv.includes('-h')) return { command: 'help', positional: [], values: new Map() };
   const command = argv[0]; if (!commands[command]) throw new IndexError('invalidArguments', `Unknown command: ${command}. Use --help.`);
-  const allowed = new Set(['root', 'cache-dir', 'json', ...commands[command]]);
+  const allowed = new Set(['root', 'cache-dir', 'json', 'debug', ...commands[command]]);
   const values = new Map<string, string[]>(); const positional: string[] = [];
   for (let i = 1; i < argv.length; i++) {
     const argument = argv[i];
@@ -71,12 +78,16 @@ function parseArguments(argv: string[]): Arguments {
   }
   const has = (name: string) => values.has(name);
   const oneFile = ['backlinks', 'sections', 'read-section'].includes(command);
-  const optionalFile = ['tables', 'images', 'glossaries', 'terms'].includes(command);
+  const optionalFile = ['tables', 'images', 'glossaries', 'terms', 'read-glossary'].includes(command);
   if ((oneFile && positional.length !== 1) || (optionalFile && positional.length > 1) || (!oneFile && !optionalFile && command !== 'read-term' && positional.length)) throw new IndexError('invalidArguments', `Invalid positional arguments for ${command}. Use --help.`);
-  if (command === 'read-section' && (has('id') === has('label') || (values.get('id')?.length ?? 0) > 1)) throw new IndexError('invalidArguments', 'read-section requires exactly one --id or --label.');
+  if (command === 'read-section' && (['id', 'label', 'title', 'heading-path'].filter(has).length !== 1 || (values.get('id')?.length ?? 0) > 1)) throw new IndexError('invalidArguments', 'read-section requires exactly one --title, --heading-path, --id or --label.');
   if (['tables', 'images'].includes(command) && has('section') && !positional.length) throw new IndexError('invalidArguments', '--section requires a file.');
   if (command === 'read-term' && (has('id') === (positional.length > 0) || (has('id') && has('file')))) throw new IndexError('invalidArguments', 'read-term requires names OR global --id values; --file only applies to names.');
-  if (['read', 'read-glossary'].includes(command) && !has('id')) throw new IndexError('invalidArguments', `${command} requires at least one --id.`);
+  if (command === 'read-glossary' && (has('id')
+    ? positional.length > 0 || has('title') || has('heading-path')
+    : positional.length !== 1 || ['title', 'heading-path'].filter(has).length !== 1))
+    throw new IndexError('invalidArguments', 'read-glossary requires a file with --title or --heading-path, OR global --id values.');
+  if (command === 'read' && !has('id')) throw new IndexError('invalidArguments', 'read requires at least one --id.');
   if (command === 'search' && !['tag', 'where', 'has-property'].some(has)) throw new IndexError('invalidArguments', 'search requires a tag or property filter.');
   return { command, positional, values };
 }
@@ -96,32 +107,36 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
       if (!where || Array.isArray(where) || typeof where !== 'object' || Object.values(where).some(v => v !== null && !['string', 'number', 'boolean'].includes(typeof v))) throw new IndexError('invalidArguments', '--where values must be strings, numbers, booleans or null.');
     }
     const queryArguments: Record<string, unknown> = {};
-    const mapping: Record<string, string> = { tag: 'tags', 'has-property': 'hasProperty', 'exact-tag': 'exactTag', 'source-hash': 'sourceHash' };
+    const mapping: Record<string, string> = { tag: 'tags', 'has-property': 'hasProperty', 'exact-tag': 'exactTag', 'source-hash': 'sourceHash', 'heading-path': 'headingPath' };
     for (const [name, list] of values) {
-      if (['root', 'cache-dir', 'json', 'where', 'no-children'].includes(name)) continue;
+      if (['root', 'cache-dir', 'json', 'debug', 'where', 'no-children'].includes(name)) continue;
       const key = name === 'id' ? (command === 'read-section' ? 'id' : 'ids') : mapping[name] ?? name;
-      queryArguments[key] = repeated.has(name) && key !== 'id' ? list : flags.has(name) ? true : list[0];
+      if (name === 'heading-path') {
+        try { queryArguments[key] = JSON.parse(list[0]); }
+        catch { throw new IndexError('invalidArguments', '--heading-path must be a JSON array of titles.'); }
+      } else queryArguments[key] = repeated.has(name) && key !== 'id' ? list : flags.has(name) ? true : list[0];
     }
     if (has('where')) queryArguments.where = where;
     if (has('no-children')) queryArguments.includeChildren = false;
     if (positional.length) queryArguments[command === 'read-term' ? 'names' : 'file'] = command === 'read-term' ? positional : positional[0];
     const service = new IndexService(get('root'), get('cache-dir'));
     const result = await service.execute({ command: command as QueryCommand, arguments: queryArguments } as IndexQuery);
-    for (const diagnostic of result.diagnostics ?? []) io.stderr(`${diagnostic.file ?? '.'}${diagnostic.line ? ':' + diagnostic.line : ''}: ${diagnostic.code}: ${diagnostic.message}\n`);
-    if (!has('json') && 'content' in result) io.stdout(result.content);
-    else if (!has('json') && 'items' in result) {
-      for (const item of result.items) {
-        if (item.status === 'error') { io.stderr(`${item.error.code}: ${item.error.message}\n${item.error.details ? JSON.stringify(item.error.details) + '\n' : ''}`); continue; }
-        if (result.items.length > 1) io.stdout(`\n<!-- ${item.kind}: ${JSON.stringify(item.name)} | ${JSON.stringify(item.file)} | ${JSON.stringify(item.id)} -->\n`);
-        io.stdout(item.content);
-      }
-    } else io.stdout(JSON.stringify(result, null, 2) + '\n');
+    for (const diagnostic of result.diagnostics ?? []) io.stderr(has('debug')
+      ? `${diagnostic.file ?? '.'}${diagnostic.line ? ':' + diagnostic.line : ''}: ${diagnostic.code}: ${diagnostic.message}\n`
+      : `${diagnostic.file ?? '.'}: ${diagnostic.message}\n`);
+    if (has('debug')) io.stdout(JSON.stringify(result, null, 2) + '\n');
+    else if (has('json')) io.stdout(JSON.stringify(presentResult(result)) + '\n');
+    else {
+      if ('items' in result) for (const item of result.items) if (item.status === 'error') io.stderr(formatCliError(item.error));
+      io.stdout(formatCliResult(result));
+    }
     return result.complete ? 0 : 1;
   } catch (error) {
-    const record = errorRecord(error);
-    const jsonOutput = argv.includes('--json') || argv.includes('--json=true') || (parsed && !['help', 'read', 'read-term', 'read-glossary', 'read-section'].includes(parsed.command)) || (!parsed && !argv[0]?.startsWith('read'));
-    if (jsonOutput) io.stdout(JSON.stringify({ schemaVersion: SCHEMA_VERSION, complete: false, error: record }, null, 2) + '\n');
-    io.stderr(`${record.code}: ${record.message}\n`);
-    return record.code === 'invalidArguments' ? 2 : 1;
+    const detailed = errorRecord(error);
+    const debug = argv.includes('--debug') || argv.includes('--debug=true');
+    const json = debug || argv.includes('--json') || argv.includes('--json=true');
+    if (json) io.stdout(JSON.stringify({ ...(debug ? { schemaVersion: SCHEMA_VERSION } : {}), complete: false, error: debug ? detailed : presentError(detailed) }) + '\n');
+    io.stderr(debug ? `${detailed.code}: ${detailed.message}\n` : formatCliError(detailed));
+    return detailed.code === 'invalidArguments' ? 2 : 1;
   }
 }

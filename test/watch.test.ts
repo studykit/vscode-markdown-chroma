@@ -122,15 +122,20 @@ test('watch polling reattaches replaced roots and close cancels cache-lock waits
   } finally { await handle.close(); await f.cleanup(); }
 });
 
-test('CLI watch emits JSON Lines, uses cwd root, updates the cache and exits cleanly', { timeout: 15000 }, async () => {
+for (const mode of ['text', 'json', 'debug']) test(`CLI watch ${mode} output updates the cache and exits cleanly`, { timeout: 15000 }, async () => {
   const f = await fixture();
-  const child = spawn(process.execPath, [path.resolve('dist/cli.cjs'), 'watch', '--cache-dir', path.dirname(path.dirname(f.service.cacheFile)), '--debounce-ms', '40'], { cwd: f.root });
+  const child = spawn(process.execPath, [path.resolve('dist/cli.cjs'), 'watch', '--cache-dir', path.dirname(path.dirname(f.service.cacheFile)), '--debounce-ms', '40', ...(mode === 'text' ? [] : [`--${mode}`])], { cwd: f.root });
   const closed = once(child, 'close'); let stdout = '', stderr = '';
   child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
-  const results = () => stdout.split('\n').slice(0, -1).filter(Boolean).map(line => JSON.parse(line));
+  const results = () => stdout.split('\n').slice(0, -1).filter(Boolean);
   try {
     await until(() => results().length > 0);
-    assert.equal(results()[0].root, await fs.realpath(f.root)); assert.equal(results()[0].event, 'indexed');
+    if (mode === 'text') assert.equal(results()[0], 'Indexed 2 documents.');
+    else if (mode === 'json') assert.deepEqual(JSON.parse(results()[0]), { event: 'indexed', complete: true, documents: 2 });
+    else {
+      const record = JSON.parse(results()[0]);
+      assert.equal(record.schemaVersion, 1); assert.equal(record.documentCount, 2); assert.equal(record.root, f.service.root); assert.ok(record.cacheFile);
+    }
     await fs.writeFile(path.join(f.root, 'a.md'), '# CLI saved\n');
     await until(() => results().length >= 2);
     assert.equal((await f.snapshot()).documents.find((d: any) => d.file === 'a.md').sections[0].title, 'CLI saved');

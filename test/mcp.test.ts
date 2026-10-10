@@ -12,6 +12,8 @@ import { IndexService, type IndexQuery } from '../src/index/query';
 import { MarkdownIndex } from '../src/index/project';
 import { runCli } from '../src/index/cli';
 import { mcpTools } from '../src/mcp/server';
+import { presentResult } from '../src/index/presentation';
+import { assertRetrievalResult } from './retrieval-contract';
 
 const source = '---\nstatus: draft\ntags: [project/sub]\n---\n(setup)=\n# Setup\nParent.\n## Child\nChild body.\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n![Alt](picture.png)\n\n:::{glossary}\nAST\n: Tree definition.\n\nRole\n: Inline syntax.\n:::\n';
 async function fixture() {
@@ -30,14 +32,17 @@ test('shared queries preserve CLI results, validate selectors and recover after 
     const queries: [IndexQuery, string[]][] = [
       [{ command: 'search', arguments: { tags: ['project'], where: { status: 'draft' } } }, ['search', '--tag', 'project', '--where', '{"status":"draft"}']],
       [{ command: 'read-section', arguments: { file: 'guide.md', label: 'setup', includeChildren: false } }, ['read-section', 'guide.md', '--label', 'setup', '--no-children']],
+      [{ command: 'read-section', arguments: { file: 'guide.md', title: 'Setup', includeChildren: false } }, ['read-section', 'guide.md', '--title', 'Setup', '--no-children']],
+      [{ command: 'read-section', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }, ['read-section', 'guide.md', '--heading-path', '["Setup","Child"]']],
       [{ command: 'read-term', arguments: { names: ['AST', 'Role', 'missing'] } }, ['read-term', 'AST', 'Role', 'missing']],
     ];
     for (const [query, args] of queries) {
       let stdout = '';
-      await runCli([...args, '--root', f.root, '--cache-dir', f.cache, '--json'], { stdout: value => { stdout += value; }, stderr: () => {} });
+      await runCli([...args, '--root', f.root, '--cache-dir', f.cache, '--debug'], { stdout: value => { stdout += value; }, stderr: () => {} });
       assert.deepEqual(await f.service.execute(query), JSON.parse(stdout));
     }
     await assert.rejects(f.service.execute({ command: 'read-section', arguments: { file: 'guide.md', id: 'setup', label: 'setup' } }), { code: 'invalidArguments' });
+    await assert.rejects(f.service.execute({ command: 'read-section', arguments: { file: 'guide.md', title: 'Setup', id: 'setup' } }), { code: 'invalidArguments' });
     await assert.rejects(f.service.execute({ command: 'tables', arguments: { section: 'setup' } }), { code: 'invalidArguments' });
     await assert.rejects(f.service.execute({ command: 'notes', arguments: {} }, { signal: AbortSignal.abort() }));
     const index = new MarkdownIndex(f.root, f.cache);
@@ -65,12 +70,13 @@ test('stdio MCP discovers and executes all 13 tools with API parity, partial rea
       const result = await client.callTool({ name, arguments: args });
       const text = result.content[0]; assert.equal(text.type, 'text');
       if (text.type === 'text' && result.structuredContent) assert.deepEqual(JSON.parse(text.text), result.structuredContent);
+      if (result.structuredContent) assertRetrievalResult(result.structuredContent);
       return { ...result, data: result.structuredContent as any };
     };
     const indexed = await call('index_documents', { rebuild: true });
-    assert.equal(indexed.data.documentCount, 2); assert.equal(indexed.data.parsed, 2);
+    assert.deepEqual(indexed.data, { complete: true, documents: 2 });
     const sections = await call('list_sections', { file: 'guide.md' });
-    assert.deepEqual(sections.data.sections.map((s: any) => s.title), ['Setup', 'Child']);
+    assert.deepEqual(sections.data, { complete: true, file: 'guide.md', sections: [{ title: 'Setup', children: [{ title: 'Child' }] }] });
     const terms = await call('list_terms');
     const glossaries = await call('list_glossaries');
     const role = terms.data.terms.find((t: any) => t.name === 'Role');
@@ -80,26 +86,34 @@ test('stdio MCP discovers and executes all 13 tools with API parity, partial rea
       ['search_notes', { command: 'search', arguments: { tags: ['project'], where: { status: 'draft' } } }],
       ['get_backlinks', { command: 'backlinks', arguments: { file: 'guide.md' } }],
       ['read_section', { command: 'read-section', arguments: { file: 'guide.md', label: 'setup', includeChildren: false } }],
+      ['read_section', { command: 'read-section', arguments: { file: 'guide.md', title: 'Setup', includeChildren: false } }],
+      ['read_section', { command: 'read-section', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }],
       ['list_tables', { command: 'tables', arguments: { file: 'guide.md', section: 'child' } }],
       ['list_images', { command: 'images', arguments: {} }],
       ['read_terms', { command: 'read-term', arguments: { names: ['AST', 'Role', 'missing'] } }],
       ['read_glossaries', { command: 'read-glossary', arguments: { ids: [glossary.id] } }],
+      ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', title: 'Child' } }],
+      ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }],
       ['read_items', { command: 'read', arguments: { ids: [role.id, glossary.id, role.id, 'missing'] } }],
     ];
     for (const [name, query] of queries) {
       const result = await call(name, query.arguments);
-      assert.deepEqual(result.data, await f.service.execute(query));
+      assert.deepEqual(result.data, presentResult(await f.service.execute(query)));
       assert.equal(!!result.isError, !result.data.complete);
     }
     const traversal = await call('list_sections', { file: '../outside.md' });
     assert.equal(traversal.isError, true);
     const invalid = await call('read_section', { file: 'guide.md', id: 'setup', label: 'setup' });
     assert.equal(invalid.isError, true);
+    const invalidTitle = await call('read_section', { file: 'guide.md', title: 'Setup', label: 'setup' });
+    assert.equal(invalidTitle.isError, true);
     const injectedRoot = await call('list_notes', { root: f.directory });
     assert.equal(injectedRoot.isError, true);
-    const oldHash = sections.data.sourceHash;
+    const original = await f.service.execute({ command: 'sections', arguments: { file: 'guide.md' } });
+    assert.ok('sourceHash' in original);
+    const oldHash = original.sourceHash;
     await fs.writeFile(path.join(f.root, 'guide.md'), source.replace('Parent.', 'Changed.'));
-    const stale = await call('read_section', { file: 'guide.md', id: 'setup', sourceHash: oldHash });
+    const stale = await call('read_section', { file: 'guide.md', title: 'Setup', sourceHash: oldHash });
     assert.equal(stale.isError, true); assert.equal(stale.data.error.code, 'documentChanged');
     const fresh = await call('read_section', { file: 'guide.md', id: 'setup', includeChildren: false });
     assert.match(fresh.data.content, /Changed\./);
