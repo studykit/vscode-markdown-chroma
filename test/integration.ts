@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as vscode from 'vscode';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { JSDOM } from 'jsdom';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
@@ -11,6 +13,47 @@ export async function run(): Promise<void> {
   assert.ok(extension, 'Development extension is installed');
   await extension.activate();
   const root = vscode.workspace.workspaceFolders![0].uri.fsPath;
+  const provider = extension.exports.mcpProvider as vscode.McpServerDefinitionProvider<vscode.McpStdioServerDefinition>;
+  assert.ok(provider, 'MCP provider is registered on this host');
+  const tokenSource = new vscode.CancellationTokenSource();
+  const definitions = await provider.provideMcpServerDefinitions(tokenSource.token);
+  assert.equal(definitions?.length, vscode.workspace.workspaceFolders!.length);
+  const definition = definitions![0];
+  assert.equal(definition.cwd?.fsPath, root);
+  assert.equal(definition.command, process.execPath);
+  assert.ok(await provider.resolveMcpServerDefinition!(definition, tokenSource.token));
+  const client = new Client({ name: 'vscode-chroma-integration', version: '1' });
+  const transport = new StdioClientTransport({ command: definition.command, args: definition.args,
+    cwd: definition.cwd?.fsPath, env: definition.env as Record<string, string>, stderr: 'pipe' });
+  try {
+    await client.connect(transport);
+    assert.equal((await client.listTools()).tools.length, 13);
+    const result = await client.callTool({ name: 'list_sections', arguments: { file: 'Showcase.md' } });
+    const data = result.structuredContent as { file: string; sections: unknown[] };
+    assert.equal(data.file, 'Showcase.md');
+    assert.ok(data.sections?.length);
+  } finally { await client.close(); }
+  const configuration = vscode.workspace.getConfiguration('markdownChroma.mcp', vscode.workspace.workspaceFolders![0].uri);
+  const initialEnabled = configuration.inspect('enabled')?.workspaceValue;
+  const initialRoot = configuration.inspect('root')?.workspaceValue;
+  let changes = 0;
+  const listener = provider.onDidChangeMcpServerDefinitions!(() => { changes++; });
+  try {
+    await configuration.update('enabled', false, vscode.ConfigurationTarget.Workspace);
+    assert.equal((await provider.provideMcpServerDefinitions(tokenSource.token))?.length, 0);
+    assert.equal(await provider.resolveMcpServerDefinition!(definition, tokenSource.token), undefined);
+    await configuration.update('enabled', true, vscode.ConfigurationTarget.Workspace);
+    await configuration.update('root', '..', vscode.ConfigurationTarget.Workspace);
+    assert.equal((await provider.provideMcpServerDefinitions(tokenSource.token))?.length, 0);
+    assert.ok(changes >= 2);
+    tokenSource.cancel();
+    assert.deepEqual(await provider.provideMcpServerDefinitions(tokenSource.token), []);
+  } finally {
+    await configuration.update('enabled', initialEnabled, vscode.ConfigurationTarget.Workspace);
+    await configuration.update('root', initialRoot, vscode.ConfigurationTarget.Workspace);
+    listener.dispose(); tokenSource.dispose();
+  }
+  console.log('PASS: native MCP provider launches bundled stdio server with host runtime, exposes 13 tools and enforces workspace settings');
   const showcase = await vscode.workspace.openTextDocument(path.join(root, 'Showcase.md'));
   await vscode.window.showTextDocument(showcase);
   await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');

@@ -165,7 +165,19 @@ markdown-chroma read --root ./notes --id 'glossary.md#term-ast' --id 'syntax.md#
 
 MyST 레이아웃 directive 내부 콘텐츠, 표·이미지, glossary 정의와 `{term}` 참조를 색인합니다. 코드·수식·주석 내부의 예시 링크와 태그는 제외합니다. Obsidian 블록 ID와 `%%…%%` 주석의 특별 처리는 제공하지 않습니다. 외부 표 선언은 `referenceOnly`로 남기며 데이터를 실행하거나 다운로드하지 않습니다. 설치된 MyST 파서가 지원하지 않는 선언에는 진단이 함께 반환됩니다.
 
-CLI와 향후 확장/MCP 연결이 사용할 순수 Node 모듈은 `markdown-chroma/index`로 내보냅니다. 전체 동작은 [CLI 명세](docs/CLI-INDEX-SPEC.md)에 설명돼 있습니다.
+CLI와 MCP가 공유하는 `IndexService` 및 TypeScript 선언을 `markdown-chroma/index`로 내보냅니다. 전체 동작은 [CLI 명세](docs/CLI-INDEX-SPEC.md)에 설명돼 있습니다.
+
+## MCP 서버
+
+같은 색인·조회 기능을 MCP 도구 13개로 제공합니다. 섹션 목록/원문, 태그·속성 검색, 백링크, 표·이미지 목록, vault 전체 용어·용어집 목록과 여러 항목 읽기를 사용할 수 있습니다.
+
+```sh
+markdown-chroma mcp --root /absolute/path/to/notes
+```
+
+MCP provider API가 있는 VS Code에서는 신뢰하는 워크스페이스 폴더마다 서버를 등록합니다. 호스트의 실행 파일을 사용하므로 확장 사용 시 별도 Node 설치가 필요하지 않습니다. `markdownChroma.mcp.enabled`로 제공 여부를, `markdownChroma.mcp.root`로 폴더 내부의 조회 루트를 설정합니다. 저장된 파일을 조회하고 색인은 디스크에 저장합니다.
+
+실행 설정, 도구 인자, 부분 실패 처리와 공용 API 예시는 [MCP 사용 문서](docs/MCP.md)에 있습니다.
 
 ## 미리보기의 현재 범위
 

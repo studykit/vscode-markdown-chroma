@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import { isUtf8 } from 'node:buffer';
 import { Cite } from '@citation-js/core';
@@ -129,13 +130,14 @@ export class MarkdownIndex {
     } catch { return; }
   }
 
-  private async lock(): Promise<() => void> {
+  private async lock(signal?: AbortSignal): Promise<() => void> {
     const directory = path.dirname(this.cacheFile);
     try { fs.mkdirSync(directory, { recursive: true }); }
     catch (error) { throw new IndexError('cacheWriteFailed', errorMessage(error)); }
     const lock = path.join(directory, 'lock'); const owner = randomUUID();
     const deadline = Date.now() + 15_000;
     while (true) {
+      signal?.throwIfAborted();
       try {
         fs.mkdirSync(lock);
         fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, owner }));
@@ -159,13 +161,13 @@ export class MarkdownIndex {
           try { if (Date.now() - fs.statSync(reclaim).mtimeMs > 30_000) fs.rmSync(reclaim, { recursive: true, force: true }); } catch { /* Retry. */ }
         } finally { if (claiming) fs.rmSync(reclaim, { recursive: true, force: true }); }
         if (Date.now() > deadline) throw new IndexError('cacheLocked', 'Another CLI process is still updating this root.');
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await delay(50, undefined, { signal });
       }
     }
   }
 
-  async refresh(rebuild = false): Promise<void> {
-    const release = await this.lock();
+  async refresh(rebuild = false, signal?: AbortSignal): Promise<void> {
+    const release = await this.lock(signal);
     try {
       this.files.clear(); this.scanDiagnostics = []; this.stats = { parsed: 0, reused: 0, removed: 0 };
       this.scan(this.root);

@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as vscode from 'vscode';
+import { registerIndexMcpProvider } from './mcp-provider';
 import type MarkdownIt from 'markdown-it';
 import { extendObsidianMarkdown } from './markdown';
 import { extendMystMarkdown } from './myst';
@@ -8,6 +9,7 @@ import { discoverVault, FileVault, isWithin } from './vault';
 import type { PreviewHost, RenderEnvironment } from './types';
 
 export async function activate(context: vscode.ExtensionContext) {
+  const mcpProvider = registerIndexMcpProvider(context);
   const vaults = new Map<string, FileVault>();
   const pending = new Map<string, Promise<FileVault>>();
   let disposed = false;
@@ -115,5 +117,5 @@ export async function activate(context: vscode.ExtensionContext) {
     ...(vscode.workspace.workspaceFolders ?? []).filter(folder => folder.uri.scheme === 'file').map(folder => ensure(path.join(folder.uri.fsPath, '__obsidian_index__.md'))),
     ...vscode.workspace.textDocuments.filter(document => document.languageId === 'markdown' && document.uri.scheme === 'file').map(document => ensure(document.uri.fsPath))
   ]);
-  return { extendMarkdownIt: (md: MarkdownIt) => extendMystMarkdown(extendObsidianMarkdown(md, host), host), refresh };
+  return { extendMarkdownIt: (md: MarkdownIt) => extendMystMarkdown(extendObsidianMarkdown(md, host), host), refresh, mcpProvider };
 }

@@ -1,5 +1,9 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { build, context } from 'esbuild';
 import { cp, copyFile, mkdir, readdir, rm, readFile, writeFile, chmod } from 'node:fs/promises';
+
+await promisify(execFile)(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.api.json']);
 
 await mkdir('dist/test', { recursive: true });
 for (const file of await readdir('dist/test')) if (file.endsWith('.cjs')) await rm(`dist/test/${file}`);
@@ -11,6 +15,7 @@ const previewBuild = { entryPoints: ['media/preview.js'], outfile: 'dist/preview
 const tests = (await readdir('test')).filter(name => name.endsWith('.test.ts'));
 const builds = [
   { entryPoints: ['src/extension.ts'], outfile: 'dist/extension.cjs' },
+  { entryPoints: ['src/mcp.ts'], outfile: 'dist/mcp.cjs' },
   { entryPoints: ['src/cli.ts'], outfile: 'dist/cli.cjs' },
   { entryPoints: ['src/index/index.ts'], outfile: 'dist/index.cjs' },
   ...tests.map(name => ({ entryPoints: [`test/${name}`], outfile: `dist/test/${name.replace('.ts', '.cjs')}` })),
@@ -27,6 +32,7 @@ if (process.argv.includes('--watch')) {
 } else {
   const results = await Promise.all([build({ ...previewBuild, metafile: true }), ...builds.map(options => build(options))]);
   await chmod('dist/cli.cjs', 0o755);
+  await chmod('dist/mcp.cjs', 0o755);
   const packages = new Set(['node_modules/katex']);
   for (const result of results) for (const input of Object.keys(result.metafile.inputs)) {
     const matches = [...input.matchAll(/node_modules\/((?:@[^/]+\/)?[^/]+)/g)];

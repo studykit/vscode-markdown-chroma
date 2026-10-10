@@ -1,11 +1,11 @@
-import { termIdentifier } from './parser';
-import { MarkdownIndex, unresolved } from './project';
-import { IndexError, SCHEMA_VERSION, normalizeTag, type ContentItem, type Glossary, type Term } from './types';
+import { IndexService, errorRecord, type IndexQuery, type QueryCommand } from './query';
+import { IndexError, SCHEMA_VERSION } from './types';
 
 const help = `Markdown Chroma — saved Markdown/MyST structure and reference index
 
 Usage: markdown-chroma <command> [file or term names] [options]
 
+  mcp                       Serve MCP over stdio (--root, --cache-dir)
   index                     Create/update the disk index (--rebuild to reparse all)
   notes                     List documents (--unresolved for unresolved references)
   search                    AND filters: --tag, --where JSON, --has-property
@@ -81,11 +81,6 @@ function parseArguments(argv: string[]): Arguments {
 }
 export interface CliIO { stdout(value: string): void; stderr(value: string): void }
 const defaultIO: CliIO = { stdout: value => process.stdout.write(value), stderr: value => process.stderr.write(value) };
-function errorRecord(error: unknown) {
-  return error instanceof IndexError ? { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }
-    : { code: 'internalError', message: error instanceof Error ? error.message : String(error) };
-}
-
 export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<number> {
   let parsed: Arguments | undefined;
   try {
@@ -99,83 +94,28 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
       catch { throw new IndexError('invalidArguments', '--where must be a JSON object.'); }
       if (!where || Array.isArray(where) || typeof where !== 'object' || Object.values(where).some(v => v !== null && !['string', 'number', 'boolean'].includes(typeof v))) throw new IndexError('invalidArguments', '--where values must be strings, numbers, booleans or null.');
     }
-    const index = new MarkdownIndex(get('root'), get('cache-dir')); await index.refresh(has('rebuild'));
-    const envelope = (result: Record<string, unknown>, complete = index.complete) => ({ schemaVersion: SCHEMA_VERSION, complete, ...result, ...(index.diagnostics.length ? { diagnostics: index.diagnostics } : {}) });
-    const json = (value: unknown) => io.stdout(JSON.stringify(value, null, 2) + '\n');
-    for (const diagnostic of index.diagnostics) io.stderr(`${diagnostic.file ?? '.'}${diagnostic.line ? ':' + diagnostic.line : ''}: ${diagnostic.code}: ${diagnostic.message}\n`);
-    const documents = positional.length && ['tables', 'images', 'terms', 'glossaries'].includes(command) ? [index.document(positional[0])] : index.data.documents;
-    if (command === 'index') json(envelope({ root: index.root, cacheFile: index.cacheFile, generation: index.data.generation, documentCount: documents.length, ...index.stats }));
-    else if (command === 'notes' || command === 'search') {
-      const tags = values.get('tag')?.map(normalizeTag) ?? [];
-      const notes = documents.filter(document => {
-        if (has('unresolved') && !document.outgoing.some(unresolved)) return false;
-        if (!tags.every(tag => document.tags.some(t => t.normalized === tag || (!has('exact-tag') && t.normalized.startsWith(tag + '/'))))) return false;
-        if (!(values.get('has-property') ?? []).every(property => Object.hasOwn(document.properties, property))) return false;
-        return Object.entries(where).every(([property, wanted]) => Object.hasOwn(document.properties, property) && (Array.isArray(document.properties[property]) ? (document.properties[property] as unknown[]).some(v => v === wanted) : document.properties[property] === wanted));
-      }).map(document => ({ file: document.file, sourceHash: document.sourceHash, properties: document.properties, tags: document.tags, aliases: document.aliases,
-        sectionCount: document.sections.length, tableCount: document.tables.length, imageCount: document.images.length, glossaryCount: document.glossaries.length, termCount: document.terms.length,
-        outgoing: document.outgoing, diagnostics: document.diagnostics }));
-      json(envelope({ root: index.root, notes }));
-    } else if (command === 'sections') {
-      const document = index.document(positional[0]); json(envelope({ file: document.file, sourceHash: document.sourceHash, sections: document.sections }));
-    } else if (command === 'read-section') {
-      const document = index.document(positional[0]); const section = index.section(document, get('id'), get('label'));
-      const endLine = has('no-children') ? section.ownEndLine : section.endLine;
-      const content = index.read({ ...section, file: document.file, sourceHash: document.sourceHash }, get('source-hash'), endLine);
-      if (has('json')) json(envelope({ file: document.file, section, sourceHash: document.sourceHash, startLine: section.startLine, endLine, includeChildren: !has('no-children'), content }));
-      else io.stdout(content);
-    } else if (command === 'backlinks') json(envelope({ file: index.document(positional[0]).file, backlinks: index.backlinks(index.document(positional[0]), get('term')) }));
-    else if (command === 'tables' || command === 'images' || command === 'glossaries') {
-      const section = get('section') ? index.section(documents[0], get('section')) : undefined;
-      const items = documents.flatMap(document => document[command] as ContentItem[]).filter(item => !section || (item.startLine >= section.startLine && item.startLine <= section.endLine));
-      json(envelope({ [command]: items }));
-    } else if (command === 'terms') {
-      let glossaryId = get('glossary');
-      if (glossaryId) {
-        const matches = documents.flatMap(d => d.glossaries).filter(g => g.id === glossaryId || (positional.length && g.localId === glossaryId));
-        if (matches.length !== 1) throw new IndexError('glossaryNotFound', 'Use a glossary ID from the glossaries list.');
-        glossaryId = matches[0].id;
-      }
-      const terms = documents.flatMap(d => d.terms).filter(term => (!glossaryId || term.glossaryId === glossaryId) && (!get('name') || term.identifier === termIdentifier(get('name')!)));
-      json(envelope({ terms }));
-    } else {
-      const termDefinitions = index.data.documents.flatMap(d => d.terms);
-      const glossaries = index.data.documents.flatMap(d => d.glossaries);
-      if (get('file')) index.document(get('file')!);
-      const selectors = values.get('id') ?? positional;
-      const seen = new Set<string>();
-      const items: Record<string, any>[] = [];
-      const selected: (Term | Glossary | undefined)[] = selectors.map(selector => {
-        if (has('id')) return command === 'read-term' ? termDefinitions.find(t => t.id === selector) : command === 'read-glossary' ? glossaries.find(g => g.id === selector) : [...termDefinitions, ...glossaries].find(item => item.id === selector);
-        const candidates = termDefinitions.filter(t => t.identifier === termIdentifier(selector) && (!get('file') || t.file === index.document(get('file')!).file));
-        return candidates.length === 1 ? candidates[0] : undefined;
-      });
-      if (has('source-hash') && new Set(selected.filter(Boolean).map(item => item!.file)).size > 1) throw new IndexError('invalidArguments', '--source-hash requires selections in one document.');
-      for (let i = 0; i < selectors.length; i++) {
-        const selector = selectors[i], item = selected[i];
-        const identity = item?.id ?? selector;
-        if (seen.has(identity)) continue; seen.add(identity);
-        try {
-          if (!item) {
-            const candidates = has('id') ? [] : termDefinitions.filter(t => t.identifier === termIdentifier(selector) && (!get('file') || t.file === index.document(get('file')!).file));
-            throw new IndexError(candidates.length ? 'ambiguousTerm' : command === 'read-glossary' ? 'glossaryNotFound' : command === 'read' ? 'itemNotFound' : 'termNotFound', candidates.length ? `Multiple definitions match: ${selector}` : `Item was not found: ${selector}`, candidates.length ? candidates : undefined);
-          }
-          const kind = 'glossaryId' in item ? 'term' : 'glossary';
-          items.push({ kind, ...item, status: 'ok', content: index.read(item, get('source-hash')) });
-        } catch (error) { items.push({ selector, status: 'error', error: errorRecord(error) }); }
-      }
-      const complete = index.complete && items.every(item => item.status === 'ok');
-      if (has('json')) json(envelope({ items }, complete));
-      else {
-        for (const item of items) {
-          if (item.status === 'error') { io.stderr(`${item.error.code}: ${item.error.message}\n${item.error.details ? JSON.stringify(item.error.details) + '\n' : ''}`); continue; }
-          if (items.length > 1) io.stdout(`\n<!-- ${item.kind}: ${JSON.stringify(item.name)} | ${JSON.stringify(item.file)} | ${JSON.stringify(item.id)} -->\n`);
-          io.stdout(item.content);
-        }
-      }
-      return complete ? 0 : 1;
+    const queryArguments: Record<string, unknown> = {};
+    const mapping: Record<string, string> = { tag: 'tags', 'has-property': 'hasProperty', 'exact-tag': 'exactTag', 'source-hash': 'sourceHash' };
+    for (const [name, list] of values) {
+      if (['root', 'cache-dir', 'json', 'where', 'no-children'].includes(name)) continue;
+      const key = name === 'id' ? (command === 'read-section' ? 'id' : 'ids') : mapping[name] ?? name;
+      queryArguments[key] = repeated.has(name) && key !== 'id' ? list : flags.has(name) ? true : list[0];
     }
-    return index.complete ? 0 : 1;
+    if (has('where')) queryArguments.where = where;
+    if (has('no-children')) queryArguments.includeChildren = false;
+    if (positional.length) queryArguments[command === 'read-term' ? 'names' : 'file'] = command === 'read-term' ? positional : positional[0];
+    const service = new IndexService(get('root'), get('cache-dir'));
+    const result = await service.execute({ command: command as QueryCommand, arguments: queryArguments } as IndexQuery);
+    for (const diagnostic of result.diagnostics ?? []) io.stderr(`${diagnostic.file ?? '.'}${diagnostic.line ? ':' + diagnostic.line : ''}: ${diagnostic.code}: ${diagnostic.message}\n`);
+    if (!has('json') && 'content' in result) io.stdout(result.content);
+    else if (!has('json') && 'items' in result) {
+      for (const item of result.items) {
+        if (item.status === 'error') { io.stderr(`${item.error.code}: ${item.error.message}\n${item.error.details ? JSON.stringify(item.error.details) + '\n' : ''}`); continue; }
+        if (result.items.length > 1) io.stdout(`\n<!-- ${item.kind}: ${JSON.stringify(item.name)} | ${JSON.stringify(item.file)} | ${JSON.stringify(item.id)} -->\n`);
+        io.stdout(item.content);
+      }
+    } else io.stdout(JSON.stringify(result, null, 2) + '\n');
+    return result.complete ? 0 : 1;
   } catch (error) {
     const record = errorRecord(error);
     const jsonOutput = argv.includes('--json') || argv.includes('--json=true') || (parsed && !['help', 'read', 'read-term', 'read-glossary', 'read-section'].includes(parsed.command)) || (!parsed && !argv[0]?.startsWith('read'));
