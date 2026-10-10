@@ -1,65 +1,43 @@
 # Markdown Chroma
 
-VS Code의 기본 Markdown Preview에서 Obsidian과 MyST 문법을 함께 렌더링하는 확장입니다.
+Render **Obsidian Flavored Markdown and MyST / Jupyter Book 2 syntax** together in VS Code's built-in Markdown Preview. Use ordinary Markdown folders with wikilinks, note embeds, callouts, footnotes, and MyST directives and roles.
 
-## MyST / Jupyter Book 2 문법
+## Getting started
 
-**VS Code 기본 Markdown Preview**에서 MyST를 바로 렌더링합니다. `myst.yml`이 있으면 가장 가까운 설정의 `project` 값(수식 매크로·번호 매기기·abbreviations·bibliography·parser 옵션)을 읽고, 없으면 기본값을 사용합니다. 문서 frontmatter가 프로젝트 값을 덮어쓰며, 로컬 `extends`도 지원합니다. 프로젝트 생성, 별도 서버, Node/npm 설치가 필요하지 않습니다. 저장 전 편집 내용도 기본 Preview에 반영됩니다. 공식 `myst-parser 1.7.4`와 `myst-transforms` 및 공식 directive 확장을 확장 안에 포함하고, 결과 AST를 VS Code Preview용 HTML로 표시합니다. 별도 Markdown editor는 제공하지 않습니다.
+Install the extension from a VSIX file with VS Code's `Extensions: Install from VSIX...` command, then:
 
-| Authoring 문법 | 기본 Preview에서의 동작 |
+1. Open a folder containing Markdown files in VS Code.
+2. Open a Markdown document.
+3. Run `Markdown: Open Preview to the Side` or `Markdown Chroma: Open Preview to the Side`. The shortcut is `Cmd+K V` on macOS or `Ctrl+K V` on Windows/Linux.
+
+The extension works with the built-in Markdown theme, preview navigation, and scroll synchronization. Changes to open documents appear in the preview before you save them.
+
+## Obsidian Markdown rendering
+
+Obsidian Flavored Markdown renders directly in the built-in Preview. Wikilinks navigate to documents, headings, and blocks; embeds display content from other documents. Callouts provide icons and folding, alongside highlights, comments, footnotes, and task lists.
+
+| Feature | Examples and behavior |
 | --- | --- |
-| Typography / Blocks / Inline Options | role, directive의 YAML·colon·인라인 옵션, 라벨, div/span, 주석, 블록 메타데이터 |
-| Callouts & Admonitions | 중첩 callout, dropdown 접기 |
-| Images, Figures & Videos | 이미지 크기·정렬, 캡션·번호·참조, MP4, 로컬 이미지 wildcard |
-| Math & Equations | KaTeX 수식, 레이블과 식 참조 |
-| Tables / Code | 표, list-table, 코드·캡션 |
-| Cross-references | 문서 내 `[](#label)`·`@label`·`{ref}`·`{numref}`·`{eq}`, 자동 문구와 번호·`{name}`·`{number}`·`%s` 치환; 문서 링크는 기본 Markdown 탐색, 내용 hover 팝업은 미지원 |
-| Embed & Include Content | 로컬 include/literalinclude, 레이블 embed, 저장된 Jupyter notebook 출력 |
-| Citations & Bibliography | 문서 frontmatter의 `bibliography` 또는 bibliography directive의 로컬 BibTeX 파일 |
-| Proofs / Exercises | 정리·증명·연습문제·해답과 번호 |
-| Diagrams | Mermaid |
-| Asides & Margins | aside/margin/sidebar/topic; 좁은 Preview에서는 본문 안에 배치 |
-| Grids, Tabs & Cards | 반응형 grid, 전환 가능한 tabs, cards |
-| Glossaries, Terms & Index | glossary/term 참조와 index 메타데이터 |
+| Wikilinks and display text | `[[Note]]`, `[[folder/Note\|Display text]]` |
+| Heading and nested heading links | `[[Note#Heading]]`, `[[Note#Parent#Child]]`, `[[#Heading]]` |
+| Block links and identifiers | `[[Note#^id]]`, `Paragraph text ^id` |
+| Document, heading, and block embeds | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^id]]` |
+| Images and dimensions | `![[image.png\|240]]`, `![[image.png\|240x120]]`, `![250](https://example.com/image.png)`, `![alt\|240](image.png)` |
+| List embeds | `![[Note#^my-list-id]]` includes the list identified by the block ID |
+| Callouts | `> [!note] Title`, `[!warning]-`, `[!tip]+`, and nested callouts |
+| Highlights and colors | `==highlight==`, `==🔴red==`, `==🟢green==`, with six colors |
+| Comments | `%%inline comment%%` and multiline `%%…%%` comments |
+| Footnotes | `[^id]` with `[^id]: Definition`, and `^[inline footnote]`. Numeric labels such as `[^3]` keep their number; automatic numbering skips reserved numbers. Small `↩` links return to references, with `↩₁ ↩₂ …` for repeated references and no sentence tooltip |
+| Task lists | `- [ ]`, `- [x]`, `- [?]`, `- [-]` |
+| Tags | `#tag`, `#category/subcategory` |
+| Properties | YAML frontmatter uses VS Code's native renderer |
+| Audio and video | `![[audio.mp3]]`, `![[video.mp4]]` |
 
-예제: [`examples/myst/index.md`](examples/myst/index.md), [`layout.md`](examples/myst/layout.md), [`syntax.md`](examples/myst/syntax.md), [`glossary.md`](examples/myst/glossary.md). Glossary 예제에서는 여러 용어집, `{term}` 참조, 표시 이름 변경, 정의보다 먼저 나오는 참조를 확인할 수 있습니다. 공식 [Authoring 문서](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), [figures](https://mystmd.org/guide/figures)를 기준으로 합니다.
+Escape pipes as `\|` inside tables. In regular text, use `[[Note|Display text]]`. Links can omit `.md` and resolve aliases from the document's frontmatter.
 
-Preview는 로컬 파일을 표시하며 코드를 실행하지 않습니다. DOI·외부 프로젝트의 자동 조회, 사용자 프로젝트 플러그인, Jupyter 실행, `.tex` 문서 변환, PDF/EPS/TIFF 이미지 변환과 PDF·Word 출판은 MyST CLI의 빌드 기능에 해당하며 이 Preview에서 실행하지 않습니다. 외부 iframe은 기본 Preview의 보안 정책에 맞춰 링크로 표시합니다. 지원하지 않거나 잘못된 directive는 원문 대신 오류 안내를 표시합니다. Frontmatter와 Obsidian 각주는 기존 표시 방식을 유지합니다.
+Write note embeds on their own line. Heading embeds include the selected heading and its children, stopping at the next heading of the same or higher level. Append paragraph block IDs to the paragraph. For a complete list, quote, callout, or table, place the block ID on a separate line after a blank line.
 
-## 사용 방법
-
-1. Obsidian vault 폴더를 VS Code에서 엽니다.
-2. Markdown 노트를 엽니다.
-3. `Markdown: Open Preview to the Side` 또는 `Markdown Chroma: Open Preview to the Side` 명령을 실행합니다. macOS에서는 `Cmd+K V`, Windows/Linux에서는 `Ctrl+K V`를 사용할 수 있습니다.
-
-별도의 미리보기 편집기를 만들지 않으므로 VS Code의 기본 Markdown 테마, 미리보기 탐색, 스크롤 동기화와 함께 사용할 수 있습니다.
-
-## 지원 문법
-
-| 기능 | 예시 |
-| --- | --- |
-| 위키링크·표시 이름 | `[[Note]]`, `[[folder/Note\|표시 이름]]` |
-| 제목·중첩 제목 링크 | `[[Note#Heading]]`, `[[Note#Parent#Child]]`, `[[#Heading]]` |
-| 블록 링크·식별자 | `[[Note#^id]]`, `문단 내용 ^id` |
-| 전체·제목·블록 임베드 | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^id]]` |
-| 이미지·크기 | `![[image.png\|240]]`, `![[image.png\|240x120]]`, `![250](https://example.com/image.png)`, `![alt\|240](image.png)` |
-| 목록 임베드 | 목록 뒤의 블록 ID를 참조하는 `![[Note#^my-list-id]]` |
-| Callout | `> [!note] 제목`, `[!warning]-`, `[!tip]+`, 중첩 Callout |
-| 강조·색상 | `==강조==`, `==🔴빨강==`, `==🟢초록==` 등 6색 |
-| 주석 | `%%인라인 주석%%`, 여러 줄의 `%%…%%` |
-| 각주 | 자체 파서로 `[^id]` + `[^id]: 설명`, `^[인라인 각주]` 지원. 본문은 위첨자 `[1]` 형식이며 `[^3]` 같은 숫자 레이블은 지정 번호 유지; 자동 번호는 수동 번호를 건너뜁니다. 각주 끝의 작은 `↩` 아이콘으로 본문에 돌아갑니다. 반복 참조는 `↩₁ ↩₂ …`로 구분하며 본문 문장 tooltip은 표시하지 않습니다 |
-| 작업 목록 | `- [ ]`, `- [x]`, `- [?]`, `- [-]` |
-| 태그 | `#태그`, `#분류/하위분류` |
-| Properties | 파일 맨 위 YAML frontmatter는 VS Code 기본 렌더러로 표시 |
-| 오디오·비디오 | `![[audio.mp3]]`, `![[video.mp4]]` |
-
-표 안의 파이프는 `\|`로 이스케이프합니다. 일반 본문에서는 `[[Note|표시 이름]]`처럼 작성합니다. 파일명에 `.md`를 생략할 수 있으며, Properties의 `aliases`도 링크 대상으로 찾습니다.
-
-노트 임베드는 한 줄에 단독으로 작성합니다. 제목 임베드는 해당 제목과 하위 제목을 포함하고, 다음 같은 수준 또는 상위 제목에서 끝납니다. 문단의 블록 ID는 끝에 붙이고, 목록·인용·Callout·표 전체의 ID는 블록 뒤에 빈 줄을 두고 별도 줄에 작성합니다.
-
-## 노트·이미지·오디오·목록 임베드
-
-[Obsidian 임베드 문서](https://obsidian.md/help/embeds)의 네 가지 기능을 지원합니다.
+### Note, image, audio, and list embeds
 
 ```markdown
 ![[My note]]
@@ -76,9 +54,9 @@ Preview는 로컬 파일을 표시하며 코드를 실행하지 않습니다. DO
 ![[My note#^my-list-id]]
 ```
 
-이미지의 너비만 지정하면 비율을 유지하고, 너비와 높이를 함께 지정하면 해당 크기로 표시합니다. 오디오는 재생·일시정지·탐색 컨트롤을 갖춘 플레이어로 표시합니다. `.mp3`, `.wav`, `.ogg`, `.m4a`, `.flac`, `.webm`, `.aac`, `.opus`를 인식하며 실제 재생은 VS Code의 미디어 코덱 지원을 따릅니다.
+Setting only image width preserves the aspect ratio. Setting both width and height displays the specified dimensions. Audio displays a player with playback and seeking controls. Recognized audio extensions are `.mp3`, `.wav`, `.ogg`, `.m4a`, `.flac`, `.webm`, `.aac`, and `.opus`; playback depends on VS Code's media codec support.
 
-목록 원본 노트에는 아래처럼 목록 다음에 빈 줄을 두고 ID를 작성합니다. 임베드에는 목록 전체가 표시되며, 중첩 목록·번호 목록·작업 목록의 서식도 유지합니다.
+To embed a list, define its block ID in the source document:
 
 ```markdown
 - list item 1
@@ -87,13 +65,13 @@ Preview는 로컬 파일을 표시하며 코드를 실행하지 않습니다. DO
 ^my-list-id
 ```
 
-`examples/vault/Showcase.md`에서 로컬 이미지, 재생 가능한 WAV 파일, 다른 노트의 목록 임베드를 확인할 수 있습니다.
+The embed preserves nested, ordered, and task list formatting. The [Obsidian Markdown showcase](examples/vault/Showcase.md) includes local images, a playable WAV file, and a list embedded from another note.
 
-## Callout 모양과 아이콘
+### Callout appearance and icons
 
-Callout 제목에는 Lucide SVG 아이콘이 표시됩니다. `[!info]+`는 펼친 상태, `[!info]-`는 접힌 상태로 시작하며, 제목 옆 화살표와 제목을 클릭하거나 키보드로 접고 펼칠 수 있습니다.
+Callout titles display Lucide SVG icons. `[!info]+` starts expanded and `[!info]-` starts collapsed. Click the title or arrow, or use the keyboard, to toggle folding.
 
-Obsidian과 같은 `.callout`, `.callout-title`, `.callout-icon`, `.callout-content` CSS 선택자를 지원합니다. 사용자 CSS 파일을 VS Code의 `markdown.styles`에 등록하면 색상과 아이콘을 바꿀 수 있습니다. 예를 들어 workspace의 `callouts.css`를 등록합니다.
+The extension supports the `.callout`, `.callout-title`, `.callout-icon`, and `.callout-content` CSS selectors. Register a CSS file with VS Code's `markdown.styles` setting to customize colors and icons:
 
 ```json
 {
@@ -110,37 +88,54 @@ Obsidian과 같은 `.callout`, `.callout-title`, `.callout-icon`, `.callout-cont
 }
 ```
 
-노트에서는 `> [!custom-question-type]+ 제목`으로 사용합니다. 색상은 HEX·`rgb()` 등 CSS 색상과 기존 Obsidian의 RGB 숫자 세 개 형식을 지원합니다. 아이콘은 번들에 포함된 Lucide 아이콘 이름 또는 `--callout-icon: '<svg viewBox="0 0 24 24"><path d="M4 12h16" stroke="currentColor"/></svg>';`처럼 지정한 SVG를 사용할 수 있습니다. SVG의 도형 속성을 사용하며 스크립트·이벤트·외부 리소스는 허용하지 않습니다. 아이콘은 로컬 번들에서 제공하므로 미리보기에서 네트워크로 불러오지 않습니다.
+Use the custom type in Markdown as `> [!custom-question-type]+ Title`. Colors accept CSS values such as HEX and `rgb()`, as well as Obsidian's three-number RGB format. Icons accept bundled Lucide names or an SVG value such as `--callout-icon: '<svg viewBox="0 0 24 24"><path d="M4 12h16" stroke="currentColor"/></svg>';`. SVG shapes are supported; scripts, event handlers, and external resources are discarded. Icons load from the local bundle.
 
-## Vault와 설정
+### Link paths and preview settings
 
-기존 설정과 단축키의 호환을 위해 설정 키와 명령 ID는 `obsidianMarkdown.*`을 유지합니다.
+In an ordinary Markdown folder, the VS Code workspace folder is the document root. When opening a file without a workspace, its containing folder is used.
 
-열린 문서에서 가장 가까운 `.obsidian` 폴더의 부모를 vault 루트로 사용합니다. 없으면 해당 VS Code workspace 폴더를 사용합니다. 파일만 단독으로 연 경우 `.obsidian`을 찾거나 파일의 폴더를 사용합니다.
+`folder/Note` is relative to the document root; `./Note` and `../Note` are relative to the current document. A bare filename is resolved in the current folder, then the root, then by a unique filename or alias within the root. Ambiguous links are marked as unresolved; specify a folder path to select the intended document. Missing notes are not created automatically.
 
-| 설정 | 기본값 | 의미 |
+Unsaved changes in open notes are included in embeds. File creation, modification, deletion, and settings changes refresh the preview. Hidden files and folders, `node_modules`, and symbolic links are excluded from document lookup.
+
+| Setting | Default | Behavior |
 | --- | --- | --- |
-| `obsidianMarkdown.vaultRoot` | `""` | workspace 내부의 상대·절대 경로로 루트를 지정. 현재 문서를 포함해야 함 |
-| `obsidianMarkdown.maxEmbedDepth` | `5` | 중첩 노트 임베드의 최대 깊이 |
-| `markdown.preview.frontMatter` | `"table"` | VS Code 기본 설정. `"table"`, `"codeBlock"`, `"hide"`로 frontmatter 표시 방식 선택 |
-| `markdown.preview.breaks` | `false` | VS Code 기본 설정. `true`이면 단일 줄바꿈도 화면에 표시 |
+| `obsidianMarkdown.maxEmbedDepth` | `5` | Maximum depth of nested note embeds |
+| `markdown.preview.frontMatter` | `"table"` | Built-in VS Code setting: `"table"`, `"codeBlock"`, or `"hide"` |
+| `markdown.preview.breaks` | `false` | Built-in VS Code setting: display single line breaks when `true` |
 
-`folder/Note`는 vault 루트 기준, `./Note`와 `../Note`는 현재 문서 기준입니다. 파일명만 있으면 같은 폴더, vault 루트, vault 내 유일한 파일명·별칭 순서로 찾습니다. 대상이 여러 개이면 모호한 링크로 표시하므로 폴더 경로를 지정하세요. 존재하지 않는 노트를 자동으로 만들지는 않습니다.
+## MyST / Jupyter Book 2 rendering
 
-열린 노트의 저장 전 변경 사항도 임베드에 반영됩니다. 파일 생성·변경·삭제와 설정 변경 시 미리보기를 갱신합니다. 수동 재색인은 `Markdown Chroma: Refresh Vault Index` 명령으로 실행합니다. `.git`, `.obsidian`, `node_modules`, 숨김 파일·폴더와 심볼릭 링크는 색인에서 제외합니다.
+Render MyST directly in the built-in Markdown Preview. If a `myst.yml` file is present, the nearest configuration supplies project settings for math macros, numbering, abbreviations, bibliography, and parser options. Document frontmatter overrides project settings, and local `extends` is supported. Without a configuration file, the preview uses defaults. No project setup, separate server, or Node/npm installation is needed for the extension.
 
-## CLI 색인과 구조 조회
+| Syntax | Preview behavior |
+| --- | --- |
+| Typography, blocks, and inline options | Roles, YAML/colon/inline directive options, labels, div/span, comments, and block metadata |
+| Callouts and admonitions | Nested callouts and collapsible dropdowns |
+| Images, figures, and videos | Image dimensions and alignment, captions, numbering, references, MP4, and local image wildcards |
+| Math and equations | KaTeX math, labels, and equation references |
+| Tables and code | Tables, list-table, code, and captions |
+| Cross-references | In-document `[](#label)`, `@label`, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Document links use standard Markdown navigation; content hover popups are not supported |
+| Embeds and includes | Local include/literalinclude, label embeds, and saved Jupyter notebook outputs |
+| Citations and bibliography | Local BibTeX files selected by frontmatter or a bibliography directive |
+| Proofs and exercises | Theorems, proofs, exercises, solutions, and numbering |
+| Diagrams | Mermaid |
+| Asides and margins | aside/margin/sidebar/topic; placed in the document flow in narrow previews |
+| Grids, tabs, and cards | Responsive grids, interactive tabs, and cards |
+| Glossaries, terms, and index | Glossary/term references and index metadata |
 
-Node.js 20 이상에서 VS Code와 별도로 CLI를 실행할 수 있습니다. 소스에서 설치할 때는 다음과 같이 빌드하고 npm 패키지를 만듭니다.
+Examples: [overview](examples/myst/index.md), [layouts](examples/myst/layout.md), [syntax](examples/myst/syntax.md), and [glossaries](examples/myst/glossary.md). The glossary example covers multiple glossaries, `{term}` references, custom display text, and references placed before definitions. See the official [MyST authoring guide](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), and [figures](https://mystmd.org/guide/figures) documentation for syntax.
+
+The preview displays local files without executing code. Automatic DOI or external project lookup, user project plugins, Jupyter execution, `.tex` conversion, PDF/EPS/TIFF image conversion, and PDF/Word publishing are outside its scope. External iframes appear as links under the built-in Preview's security policy. Invalid or unsupported directives display an error message. Frontmatter and Obsidian footnotes retain their existing presentation.
+
+## CLI indexing and content retrieval
+
+The CLI runs independently of VS Code with Node.js 20 or later. Install a packaged npm archive, then view the available commands:
 
 ```sh
-npm install
-npm pack
 npm install -g ./markdown-chroma-0.1.0.tgz
 markdown-chroma --help
 ```
-
-개발 중에는 `npm run build` 후 `node dist/cli.cjs <command>`로 실행할 수 있습니다.
 
 ```sh
 markdown-chroma index --root ./notes
@@ -153,64 +148,43 @@ markdown-chroma images --root ./notes
 markdown-chroma glossaries --root ./notes
 markdown-chroma terms --root ./notes
 markdown-chroma read-term 'AST' 'MyST Markdown' --root ./notes --json
-# 목록에서 받은 전역 ID로 용어와 용어집을 함께 선택합니다.
+# Use global IDs returned by the lists to read terms and glossaries together.
 markdown-chroma read --root ./notes --id 'glossary.md#term-ast' --id 'syntax.md#glossary-1' --json
 ```
 
-파일 인자는 `--root` 기준의 정확한 상대 경로입니다. 루트를 생략하면 현재 디렉터리를 사용하며 `.obsidian/` 설정이나 색인을 읽지 않습니다. 숨김 경로, `node_modules`, `_build`, 심볼릭 링크를 제외한 `.md`·`.markdown` 파일을 색인합니다. 가장 가까운 루트 내부 MyST 설정과 문서 frontmatter를 적용합니다.
+File arguments are exact paths relative to `--root`, which defaults to the current directory. The CLI indexes `.md` and `.markdown` files, excluding hidden paths, `node_modules`, `_build`, and symbolic links. It applies the nearest MyST configuration inside the root and document frontmatter.
 
-목록·검색은 JSON, 읽기는 원본 Markdown을 반환합니다. 읽기에 `--json`을 붙이면 항목 정보와 `content`를 함께 받습니다. 여러 용어·용어집은 요청 순서대로 읽으며, 일부 항목을 찾지 못하면 나머지 결과와 함께 `complete: false` 및 종료 코드 1을 반환합니다. 잘못된 인자는 종료 코드 2입니다. 진단은 stderr에 기록합니다.
+Lists and searches return JSON; reads return original Markdown. Add `--json` to a read for metadata and `content`. Batch term and glossary reads preserve request order. Missing selections return successful results alongside `complete: false` and exit code 1. Invalid arguments exit with code 2. Diagnostics go to stderr.
 
-색인은 사용자 캐시 디렉터리의 `markdown-chroma` 아래 루트별로 저장하며 `--cache-dir`로 위치를 지정할 수 있습니다. 본문 전체나 AST는 저장하지 않습니다. 조회마다 저장된 파일의 내용 hash를 확인하고 변경된 문서만 다시 파싱합니다. `index --rebuild`는 전체를 다시 파싱합니다. 섹션·용어 읽기의 `--source-hash`는 목록 조회 후 문서가 변경됐는지 검증합니다. 문서·설정·bibliography의 파일별 한도는 2 MiB입니다.
+The index is stored under `markdown-chroma` in the user cache directory, with separate caches for each root. Use `--cache-dir` to select a location. Queries check saved file hashes and reparse changed documents; `index --rebuild` reparses everything. Use `--source-hash` for section or term reads to detect changes since listing. Source, configuration, and bibliography files have a 2 MiB limit.
 
-MyST 레이아웃 directive 내부 콘텐츠, 표·이미지, glossary 정의와 `{term}` 참조를 색인합니다. 코드·수식·주석 내부의 예시 링크와 태그는 제외합니다. Obsidian 블록 ID와 `%%…%%` 주석의 특별 처리는 제공하지 않습니다. 외부 표 선언은 `referenceOnly`로 남기며 데이터를 실행하거나 다운로드하지 않습니다. 설치된 MyST 파서가 지원하지 않는 선언에는 진단이 함께 반환됩니다.
+Indexing includes content inside MyST layout directives, tables, images, glossary definitions, and `{term}` references. Code, math, and parser-recognized comments do not contribute example links or tags. Unlike the preview, the index does not provide special handling for Obsidian block IDs or `%%…%%` comments. External table declarations remain `referenceOnly`; their data is neither executed nor downloaded. Unsupported parser declarations include diagnostics.
 
-CLI와 MCP가 공유하는 `IndexService` 및 TypeScript 선언을 `markdown-chroma/index`로 내보냅니다. 전체 동작은 [CLI 명세](docs/CLI-INDEX-SPEC.md)에 설명돼 있습니다.
+See the [CLI specification](docs/CLI-INDEX-SPEC.md) for the complete behavior.
 
-## MCP 서버
+## MCP server
 
-같은 색인·조회 기능을 MCP 도구 13개로 제공합니다. 섹션 목록/원문, 태그·속성 검색, 백링크, 표·이미지 목록, vault 전체 용어·용어집 목록과 여러 항목 읽기를 사용할 수 있습니다.
+The same indexing and retrieval features are available through 13 MCP tools: section listing and reads, tag and property searches, backlinks, table and image lists, terms and glossaries across the root, and batch content reads.
 
 ```sh
 markdown-chroma mcp --root /absolute/path/to/notes
 ```
 
-MCP provider API가 있는 VS Code에서는 신뢰하는 워크스페이스 폴더마다 서버를 등록합니다. 호스트의 실행 파일을 사용하므로 확장 사용 시 별도 Node 설치가 필요하지 않습니다. `markdownChroma.mcp.enabled`로 제공 여부를, `markdownChroma.mcp.root`로 폴더 내부의 조회 루트를 설정합니다. 저장된 파일을 조회하고 색인은 디스크에 저장합니다.
+On VS Code hosts with the MCP provider API, the extension offers a server for each trusted workspace folder. It uses the host runtime, so extension users do not need a separate Node installation. Configure availability with `markdownChroma.mcp.enabled` and the query root with `markdownChroma.mcp.root`. The server queries saved files and persists its index on disk.
 
-실행 설정, 도구 인자, 부분 실패 처리와 공용 API 예시는 [MCP 사용 문서](docs/MCP.md)에 있습니다.
+See the [MCP guide](docs/MCP.md) for launch configuration, tool arguments, partial results, and shared API examples.
 
-## 미리보기의 현재 범위
+## Preview scope
 
-- VS Code 기본 읽기 미리보기를 확장합니다. 편집기 내부의 Obsidian Live Preview는 포함하지 않습니다.
-- 체크박스는 읽기 전용이고, 태그는 표시만 합니다. 체크박스 수정과 태그 검색은 포함하지 않습니다.
-- PDF·Canvas 등 별도 뷰어가 필요한 첨부는 파일 링크로 표시합니다.
-- Dataview·Templater·Bases·검색 쿼리 실행, Obsidian 테마·CSS snippet 자동 로딩은 포함하지 않습니다. 일반 코드 블록은 기존 렌더러로 전달합니다.
-- 데스크톱의 로컬 파일 vault를 대상으로 합니다. 가상 파일 시스템과 웹 확장은 지원하지 않습니다.
-- 노트별 읽기 한도는 2 MiB, 미리보기별 임베드 한도는 100개/4 MiB입니다. 순환 참조는 중단하고 미리보기에 원인을 표시합니다.
-- HTML은 VS Code 기본 Markdown 렌더러와 보안 설정을 따릅니다.
+- The extension enhances VS Code's built-in reading preview. It does not provide Obsidian Live Preview inside the editor.
+- Checkboxes are read-only, and tags are displayed without preview search actions.
+- Attachments that need a separate viewer, such as PDF and Canvas files, appear as file links.
+- Dataview, Templater, Bases, and search queries are not executed. Obsidian themes and CSS snippets are not loaded automatically. Ordinary code blocks use the existing renderer.
+- Local Markdown files on desktop VS Code are supported. Virtual file systems and web extensions are not supported.
+- Notes have a 2 MiB read limit. Each preview allows up to 100 embeds and 4 MiB of embedded content. Cycles stop with a visible explanation.
+- HTML follows the built-in Markdown renderer and VS Code's security settings.
 
-## 개발·검증
-
-```sh
-npm install
-npm run check
-npm run package
-```
-
-F5로 Extension Development Host를 실행하면 `examples/vault`가 열립니다. `Showcase.md`의 기본 Markdown Preview에서 문법을 확인할 수 있습니다.
-
-실제 VS Code 호스트 테스트는 설치된 실행 파일을 지정해 실행합니다. VS Code를 다운로드하지 않습니다.
-
-```sh
-VSCODE_EXECUTABLE_PATH='/Applications/Visual Studio Code.app/Contents/MacOS/Code' npm run test:integration
-```
-
-VSIX는 `artifacts/markdown-chroma-0.1.0.vsix`에 생성됩니다. VS Code의 `Extensions: Install from VSIX...` 명령으로 설치할 수 있습니다.
-
-파싱 규칙은 파일을 읽지 않고 토큰을 만듭니다. 렌더링 시 VS Code가 제공하는 현재 문서 URI를 사용해 링크와 임베드를 해석하므로 토큰 캐시와 다중 문서 미리보기에서도 기준 문서가 유지됩니다.
-
-## 참고
+## References
 
 - [Obsidian Flavored Markdown](https://obsidian.md/help/obsidian-flavored-markdown)
-- [기본 문법](https://obsidian.md/help/syntax), [내부 링크](https://obsidian.md/help/links), [임베드](https://obsidian.md/help/embeds), [Callouts](https://obsidian.md/help/callouts), [Properties](https://obsidian.md/help/properties)
-- [VS Code Markdown Extension API](https://code.visualstudio.com/api/extension-guides/markdown-extension)
+- [Basic syntax](https://obsidian.md/help/syntax), [internal links](https://obsidian.md/help/links), [embeds](https://obsidian.md/help/embeds), [callouts](https://obsidian.md/help/callouts), and [properties](https://obsidian.md/help/properties)
