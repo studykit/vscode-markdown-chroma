@@ -2,7 +2,7 @@
 
 ## Purpose and documentation
 
-Markdown Chroma renders Obsidian Flavored Markdown and MyST / Jupyter Book 2 syntax in VS Code's built-in Markdown Preview. It also provides a saved-file index through a CLI, a shared Node API, and a stdio MCP server.
+Markdown Chroma renders Obsidian Flavored Markdown and MyST / Jupyter Book 2 syntax in VS Code's built-in Markdown Preview. It also provides a saved-file index through a CLI, a shared Node API, and stdio / Streamable HTTP MCP servers.
 
 - Write `README.md` and `AGENTS.md` in English.
 - Keep the README focused on user-facing features, syntax, settings, and usage. Present ordinary Markdown folders as the starting point. Describe Obsidian Markdown rendering explicitly; an Obsidian vault is not a setup requirement.
@@ -34,6 +34,8 @@ For CLI development, run a built entry point directly:
 npm run build
 node dist/cli.cjs --help
 node dist/mcp.cjs --root ./examples/myst
+node dist/mcp.cjs --transport http --root ./examples/myst --port 3000
+node dist/cli.cjs watch --root ./examples/myst
 ```
 
 To create and install the npm archive:
@@ -74,10 +76,10 @@ Choose verification according to the change:
 | Preview document lookup, aliases, and file access | `src/vault.ts` |
 | MyST rendering, references, and optional configuration | `src/myst.ts`, `src/references.ts`, `src/myst-config.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
-| Persistent indexing, parsing, records, and shared queries | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts` |
+| Persistent indexing, parsing, records, shared queries, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
 | CLI entry point and argument handling | `src/cli.ts`, `src/index/cli.ts` |
 | Public Node API exports | `src/index/index.ts` |
-| MCP entry point, stdio lifecycle, and tool registration | `src/mcp.ts`, `src/mcp/stdio.ts`, `src/mcp/server.ts` |
+| MCP entry point, transport selection, stdio / HTTP lifecycle, and tools | `src/mcp.ts`, `src/mcp/cli.ts`, `src/mcp/stdio.ts`, `src/mcp/http.ts`, `src/mcp/server.ts` |
 | VS Code MCP server definitions | `src/mcp-provider.ts` |
 | Bundles, assets, notices, and API declarations | `scripts/build.mjs`, `tsconfig.api.json` |
 | Unit and host integration tests | `test/`, `scripts/test-integration.mjs` |
@@ -108,6 +110,8 @@ Settings and command IDs retain the `obsidianMarkdown.*` prefix for compatibilit
 - Refresh saved-file snapshots on queries, reuse unchanged parsed records, and preserve cache locking, cancellation-aware waits, and serialized requests. Do not store full document bodies or ASTs in the persistent cache.
 - Preserve typed AND search filters, deterministic term selection, request order, deduplication of identical selections, and successful items in partial reads. Report `complete: false` with diagnostics or per-item errors when results are partial.
 - Keep MCP stdout protocol-only and launch errors on stderr. Requests cannot change the server root. SDK validation errors may have text content without `structuredContent`; handle both response forms.
+- Streamable HTTP uses the same root-bound service through the SDK's public handler. Bind loopback by default; validate Host and Origin headers, require the environment-supplied Bearer token for non-loopback access, and keep tokens out of URLs and logs. Retain stdio as the default and the VS Code provider transport.
+- CLI watch and MCP background watching share `startIndexWatch`. Debounce events, retain periodic full hash scans and query-time refresh, skip the same excluded trees and cache paths as traversal, reattach replaced directories, and cancel lock waits and release watches on shutdown.
 - Offer MCP servers only for trusted local workspace folders. Validate configured roots and recheck definitions before launch. Use the VS Code host runtime and retain preview support on older hosts without the MCP provider API.
 
 ## Developer references

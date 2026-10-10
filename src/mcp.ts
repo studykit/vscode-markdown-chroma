@@ -1,3 +1,3 @@
 #!/usr/bin/env node
-import { runMcp } from './mcp/stdio';
-runMcp(process.argv.slice(2));
+import { runMcp } from './mcp/cli';
+void runMcp(process.argv.slice(2));

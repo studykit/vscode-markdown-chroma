@@ -12,12 +12,12 @@ import { normalizeLabel } from 'myst-common';
 import { mystConfiguration, mergeSettings } from '../myst-config';
 import { isWithin } from '../vault';
 import { extract, hash, parseIndex } from './parser';
+import { isExcludedIndexPath } from './paths';
 import { IndexError, PARSER_VERSION, SCHEMA_VERSION, type ContentItem, type Diagnostic, type DocumentIndex, type ProjectIndex, type Reference, type Resolution, type Section } from './types';
 
 export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const key = (value: string) => value.normalize('NFC').toLowerCase();
 const portable = (value: string) => value.split(path.sep).join('/');
-const ignored = new Set(['node_modules', '_build']);
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 export function defaultCacheDirectory(): string {
   const base = process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Caches') : process.platform === 'win32'
@@ -46,16 +46,15 @@ export class MarkdownIndex {
   get complete() { return !this.data.diagnostics.length && !this.data.documents.some(d => d.diagnostics.length); }
   get diagnostics() { return [...this.data.diagnostics, ...this.data.documents.flatMap(d => d.diagnostics)]; }
 
-  private scan(directory: string): void {
+  private scan(directory: string, cacheDirectory = fs.realpathSync(path.dirname(this.cacheFile))): void {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(directory, { withFileTypes: true }); }
     catch (error) { this.scanDiagnostics.push({ code: 'directoryReadFailed', file: portable(path.relative(this.root, directory)), message: errorMessage(error), severity: 'error' }); return; }
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
-      if (entry.name.startsWith('.') || ignored.has(entry.name) || entry.isSymbolicLink()) continue;
       const absolute = path.join(directory, entry.name);
       // Custom caches inside the root are never indexed as source files.
-      if (absolute === path.dirname(this.cacheFile)) continue;
-      if (entry.isDirectory()) this.scan(absolute);
+      if (entry.isSymbolicLink() || isExcludedIndexPath(this.root, absolute, cacheDirectory)) continue;
+      if (entry.isDirectory()) this.scan(absolute, cacheDirectory);
       else if (entry.isFile()) this.files.add(portable(path.relative(this.root, absolute)));
     }
   }

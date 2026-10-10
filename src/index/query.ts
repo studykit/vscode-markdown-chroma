@@ -45,6 +45,7 @@ export class IndexService {
   private pending: Promise<unknown> = Promise.resolve();
   constructor(root?: string, cacheDirectory?: string) { this.index = new MarkdownIndex(root, cacheDirectory); }
   get root() { return this.index.root; }
+  get cacheFile() { return this.index.cacheFile; }
   execute(query: IndexQuery, options: { signal?: AbortSignal } = {}): Promise<QueryResult> {
     const schema = querySchemas[query.command];
     if (!schema) return Promise.reject(new IndexError('invalidArguments', 'Unknown query command.'));

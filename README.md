@@ -139,6 +139,7 @@ markdown-chroma --help
 
 ```sh
 markdown-chroma index --root ./notes
+markdown-chroma watch --root ./notes
 markdown-chroma search --root ./notes --tag project --where '{"status":"draft"}'
 markdown-chroma backlinks guide.md --root ./notes
 markdown-chroma sections guide.md --root ./notes
@@ -158,6 +159,10 @@ Lists and searches return JSON; reads return original Markdown. Add `--json` to 
 
 The index is stored under `markdown-chroma` in the user cache directory, with separate caches for each root. Use `--cache-dir` to select a location. Queries check saved file hashes and reparse changed documents; `index --rebuild` reparses everything. Use `--source-hash` for section or term reads to detect changes since listing. Source, configuration, and bibliography files have a 2 MiB limit.
 
+`markdown-chroma watch --root ./notes` keeps the saved-file index updated until you stop it with `Ctrl+C`. It indexes once at startup, watches eligible directories, and groups file events over 300 ms before refreshing. Markdown saves, creation, deletion, renames, MyST configuration, bibliography, and attachment changes trigger refreshes. Hidden paths, `node_modules`, `_build`, symbolic links, and the root's index cache are excluded. A full hash scan every 30 seconds covers missed events and restores directory watches after replacement. Each refresh checks the root's file list and hashes and reparses only changed documents. Queries still check saved files independently.
+
+Watch outputs one JSON object per line for the initial snapshot and subsequent snapshot changes; failures go to stderr. Adjust the timing with `--debounce-ms` and `--poll-interval-ms`. Unsaved editor changes are included only in preview rendering.
+
 Indexing includes content inside MyST layout directives, tables, images, glossary definitions, and `{term}` references. Code, math, and parser-recognized comments do not contribute example links or tags. Unlike the preview, the index does not provide special handling for Obsidian block IDs or `%%…%%` comments. External table declarations remain `referenceOnly`; their data is neither executed nor downloaded. Unsupported parser declarations include diagnostics.
 
 See the [CLI specification](docs/CLI-INDEX-SPEC.md) for the complete behavior.
@@ -166,11 +171,86 @@ See the [CLI specification](docs/CLI-INDEX-SPEC.md) for the complete behavior.
 
 The same indexing and retrieval features are available through 13 MCP tools: section listing and reads, tag and property searches, backlinks, table and image lists, terms and glossaries across the root, and batch content reads.
 
+### Use the server bundled with the VS Code extension
+
+1. Run `Extensions: Install from VSIX...` and select `markdown-chroma-0.1.0.vsix`.
+2. Open a local folder containing Markdown files and grant Workspace Trust.
+3. Open a Markdown file to activate the extension, then run `MCP: List Servers` from the Command Palette.
+4. Select `Markdown Chroma: <folder name>` and start the server. Confirm server trust when prompted. VS Code discovers the tools and manages the server process and tool approvals.
+
+This requires a VS Code host with the MCP provider API. The bundled server uses the host runtime; no separate Node.js or npm installation is required.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `markdownChroma.mcp.enabled` | `true` | Offer a server for the workspace folder |
+| `markdownChroma.mcp.root` | `""` | Query the workspace folder; set a relative path or an absolute directory inside it to narrow the root |
+
+Each trusted local folder in a multi-root workspace has its own server. If a server is missing, check these settings and the `Markdown Chroma MCP` output channel. An invalid root prevents the server from being offered; older hosts without the provider API retain preview support.
+
+### Install a standalone MCP server
+
+For an MCP client outside the extension, install Node.js 20 or later and the packaged npm archive:
+
 ```sh
-markdown-chroma mcp --root /absolute/path/to/notes
+npm install -g ./markdown-chroma-0.1.0.tgz
+markdown-chroma --help
 ```
 
-On VS Code hosts with the MCP provider API, the extension offers a server for each trusted workspace folder. It uses the host runtime, so extension users do not need a separate Node installation. Configure availability with `markdownChroma.mcp.enabled` and the query root with `markdownChroma.mcp.root`. The server queries saved files and persists its index on disk.
+The archive installs both `markdown-chroma` and `markdown-chroma-mcp`. Configure your MCP client to launch a **stdio** server with:
+
+- Command: `markdown-chroma-mcp`
+- Arguments: `--root`, `/absolute/path/to/notes`
+
+The equivalent command is `markdown-chroma mcp --root /absolute/path/to/notes`. With the default stdio transport, the client starts the process and communicates over stdin/stdout.
+
+For manual setup in VS Code, run `MCP: Open User Configuration` and add this entry to the configuration's `servers` object:
+
+```json
+{
+  "servers": {
+    "markdown-chroma": {
+      "type": "stdio",
+      "command": "markdown-chroma-mcp",
+      "args": ["--root", "/absolute/path/to/notes"]
+    }
+  }
+}
+```
+
+Replace the notes path with your folder. If the client cannot find the executable, replace `command` with its absolute installed path; on macOS/Linux, find it with `command -v markdown-chroma-mcp`. Other clients may use a different configuration format; use the same command and arguments in their stdio server settings. See [VS Code's MCP configuration guide](https://code.visualstudio.com/docs/agent-customization/mcp-servers) for its configuration options.
+
+Run `MCP: List Servers`, select `markdown-chroma`, and start it to verify the manual connection. If you use manual setup alongside the extension, set `markdownChroma.mcp.enabled` to `false` for that workspace folder to avoid offering two servers for the same notes.
+
+### Connect by URL with Streamable HTTP
+
+Start the standalone server in a terminal or service manager:
+
+```sh
+markdown-chroma-mcp --transport http --root /absolute/path/to/notes --port 3000
+```
+
+Connect your MCP client to `http://127.0.0.1:3000/mcp` using **Streamable HTTP**. The terminal process must keep running. The server prints its URL and resolved project root to stderr. The default bind address is `127.0.0.1`; `--port 0` selects an available port.
+
+For example, add this to VS Code's MCP user configuration:
+
+```json
+{
+  "servers": {
+    "markdown-chroma-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:3000/mcp"
+    }
+  }
+}
+```
+
+To require authentication, set `MARKDOWN_CHROMA_MCP_TOKEN` in the server's environment and configure the client to send `Authorization: Bearer <token>`. Non-loopback binding with `--host` requires this token and explicit `--allowed-hosts` (comma-separated hostnames or IPs without ports). A reverse proxy can keep the backend on loopback; add the proxy's public hostname to `--allowed-hosts`, set the token, and use HTTPS for the public endpoint. Present `Origin` headers are checked against loopback hostnames by default; `--allowed-origins` sets the permitted origin hostnames. The server provides shared-token authentication; TLS termination and OAuth are handled outside it.
+
+### Project root and automatic indexing
+
+All connection methods query saved files and persist the index on disk. **`--root` is optional**: it defaults to the server process's working directory, and relative paths are resolved there. Specify an absolute root in client or service configurations so the selected project is unambiguous. Each process serves one fixed root; client requests cannot select or change it. Run another process on a different port for another HTTP root.
+
+MCP servers watch the root automatically using the same refresh core as `markdown-chroma watch`. Pass `--no-watch` to disable background watching; queries still refresh saved-file snapshots. VS Code's automatic provider continues to launch stdio servers and supplies the configured workspace root. Begin with `list_sections`, `list_terms`, or `list_glossaries`, then read the selected IDs.
 
 See the [MCP guide](docs/MCP.md) for launch configuration, tool arguments, partial results, and shared API examples.
 

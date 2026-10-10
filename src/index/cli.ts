@@ -5,8 +5,9 @@ const help = `Markdown Chroma — saved Markdown/MyST structure and reference in
 
 Usage: markdown-chroma <command> [file or term names] [options]
 
-  mcp                       Serve MCP over stdio (--root, --cache-dir)
+  mcp                       Serve MCP over stdio or HTTP (mcp --help for options)
   index                     Create/update the disk index (--rebuild to reparse all)
+  watch                     Index saved files on changes (watch --help for options)
   notes                     List documents (--unresolved for unresolved references)
   search                    AND filters: --tag, --where JSON, --has-property
   backlinks <file>           Incoming references (--term local-or-global-id)

@@ -8,6 +8,7 @@ Markdown과 MyST 문서에서 필요한 노트를 찾고, 문서의 섹션·표�
 
 - CLI를 먼저 제공한다. 공용 조회 API·MCP 서버·VS Code MCP provider 연결은 [MCP 문서](MCP.md)에 설명한다. 별도 조회 UI는 후속 작업이다.
 - 태그·속성 검색, 백링크 색인, 디스크 저장을 제공한다.
+- CLI `watch`와 MCP background watcher가 같은 코어로 저장 파일 변경을 감지하고 기존 증분 갱신을 호출한다.
 - 섹션 목록 조회와 특정 섹션의 원문 추출을 제공한다.
 - 표와 이미지의 목록 조회를 제공한다.
 - MyST `glossary`와 용어 정의를 색인하고 `{term}` 참조를 해석한다.
@@ -28,6 +29,19 @@ Markdown과 MyST 문서에서 필요한 노트를 찾고, 문서의 섹션·표�
 루트 안의 가장 가까운 `myst.yml`에서 문서 파싱에 필요한 설정을 읽는다. 문서 frontmatter가 해당 값을 덮어쓴다. 설정 파일이 없어도 기본 MyST 설정으로 동작한다. 프로젝트 설정으로 루트를 자동 변경하지 않는다. 원격 설정·외부 프로젝트·사용자 실행 코드나 플러그인을 불러오지 않는다.
 
 CLI는 저장된 파일 내용을 조회한다. VS Code의 저장 전 편집 내용은 이 단계의 범위에 포함하지 않는다.
+
+## 저장 파일 변경 감지
+
+`markdown-chroma watch --root <directory>`는 시작 시 색인을 갱신하고 계속 실행한다. MCP의 stdio·HTTP도 기본적으로 같은 `startIndexWatch`를 사용하며 `--no-watch`로 background 감지만 끌 수 있다. 별도 CLI watch와 MCP가 같이 실행되어도 root별 캐시 잠금을 공유한다.
+
+- 감지 대상은 저장된 Markdown·MyST 설정·BibTeX·attachment의 생성·수정·이름 변경·삭제이다. 저장 전 편집 내용은 제외한다.
+- 숨김 경로, `node_modules`, `_build`, symlink와 해당 root의 캐시 하위 경로를 색인과 같은 규칙으로 제외한다. 캐시 쓰기로 반복 갱신하지 않는다.
+- 제외되지 않은 디렉터리에 `fs.watch`를 등록하고 기본 300 ms debounce로 이벤트를 모은다. 폴더 생성·이동·교체 후에는 watcher를 재등록한다.
+- 이벤트 이후 기존 갱신을 재사용한다. 파일 목록·source/config/bibliography hash는 전체 확인하지만 바뀐 문서만 재파싱한다. 링크·백링크 해석도 다시 갱신한다.
+- 기본 30초 주기 갱신으로 OS 이벤트 누락·watcher 오류·디렉터리 교체를 보완한다. 조회 시 전체 hash 검사는 그대로 유지한다.
+- CLI watch의 `--debounce-ms`, `--poll-interval-ms`는 1 이상 2147483647 이하의 정수이다. MCP는 기본값을 사용한다.
+- 시작 시 snapshot과 generation이 달라진 snapshot을 `event: "indexed"`가 추가된 색인 결과 JSON Lines로 stdout에 출력한다. 진단은 결과에 포함하고 watcher 실패는 stderr에 출력한 뒤 재시도한다.
+- SIGINT/SIGTERM 또는 stdio EOF에서 timer·watcher를 해제하고 대기 중인 캐시 잠금을 취소한다. 진행 중인 동기 파싱은 중간에 중단하지 않는다.
 
 ## 혼합 문법 파싱
 
@@ -72,6 +86,9 @@ Obsidian 구문을 재파싱할 때 이스케이프, 코드 영역, 서식으로
 ```sh
 # 색인 생성 또는 변경 파일 갱신
 markdown-chroma index --root ./docs
+
+# 저장 파일 변경 감지와 자동 갱신
+markdown-chroma watch --root ./docs
 
 # 색인 전체 재생성
 markdown-chroma index --root ./docs --rebuild
@@ -457,6 +474,7 @@ MyST `glossary` directive를 의미가 있는 콘텐츠 항목으로 색인한�
 | 레이아웃 directive 레이블 참조 | 레이아웃 자체를 조회 가능한 대상으로 등록하지 않는 것으로 제안 |
 | frontmatter 속성 안의 위키링크 | 백링크에서 제외. 속성 값은 검색 가능 |
 | 변경 확인의 정확도와 비용 | 조회마다 전체 hash 확인, 변경된 문서만 재파싱 |
+| 자동 변경 감지 | CLI watch·MCP에서 공용 watcher 사용. 300 ms debounce, 30초 보완 검사, 기존 갱신 재사용 |
 | 큰 파일 처리 | 문서·설정·bibliography 각각 2 MiB, 초과 파일 진단 |
 | CLI 배포 | npm `bin`, Node 20 이상. CLI·공유 색인 모듈 번들을 VSIX에도 포함 |
 

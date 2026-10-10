@@ -3,3 +3,5 @@ export { parseIndex, extract, termIdentifier } from './parser';
 export * from './types';
 export { IndexService, querySchemas, errorRecord } from './query';
 export type { IndexQuery, QueryCommand, QueryArguments, QueryResult, ReadItem } from './query';
+export { startIndexWatch } from './watch';
+export type { IndexWatchOptions, IndexRefreshResult } from './watch';
