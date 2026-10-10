@@ -49,7 +49,7 @@ npm install -g ./markdown-chroma-0.1.0.tgz
 
 ## Runtime verification
 
-Press F5 to launch the Extension Development Host. The launch configuration opens `examples/vault`; this is a fixture directory name, not a requirement to use an Obsidian vault. Open `Showcase.md` in the built-in Markdown Preview to inspect Obsidian syntax, local media, and embeds. MyST examples are in `examples/myst`.
+Press F5 to launch the Extension Development Host. The launch configuration disables installed extensions to keep the development host isolated. It opens `examples/vault`; this is a fixture directory name, not a requirement to use an Obsidian vault. Open `Showcase.md` in the built-in Markdown Preview to inspect Obsidian syntax, local media, and embeds. MyST examples are in `examples/myst`. The English `preview-demo.md` files in both folders are used for README screenshots.
 
 Run integration tests against an installed VS Code executable:
 

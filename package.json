@@ -4,6 +4,15 @@
   "description": "Render Obsidian and MyST syntax in VS Code's built-in Markdown preview, without a MyST project.",
   "version": "0.1.0",
   "publisher": "studykit",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/studykit/vscode-markdown-chroma.git"
+  },
+  "homepage": "https://github.com/studykit/vscode-markdown-chroma#readme",
+  "bugs": {
+    "url": "https://github.com/studykit/vscode-markdown-chroma/issues"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0",
@@ -42,6 +51,10 @@
     "dist/THIRD_PARTY_NOTICES.txt",
     "dist/katex",
     "media/preview.css",
+    "media/icon.png",
+    "docs/images",
+    "docs/CLI.md",
+    "docs/PREVIEW.md",
     "docs/CLI-INDEX-SPEC.md",
     "README.md",
     "LICENSE",
@@ -126,7 +139,7 @@
     "check": "npm run typecheck && npm test",
     "prepack": "npm run build",
     "vscode:prepublish": "npm run build",
-    "package": "mkdir -p artifacts && vsce package --no-dependencies --no-rewrite-relative-links --allow-missing-repository --out artifacts/markdown-chroma-0.1.0.vsix"
+    "package": "mkdir -p artifacts && vsce package --no-dependencies --out artifacts/markdown-chroma-0.1.0.vsix"
   },
   "dependencies": {
     "@citation-js/core": "0.9.0",

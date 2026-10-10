@@ -82,6 +82,45 @@ export async function run(): Promise<void> {
   assert.match(html, /obsidian-block-checklist/);
   console.log('PASS: built-in markdown.api.render loads the plugin and renders all showcase syntax');
 
+  const codeSamples = [
+    ['javascript', 'const answer = "hello";'],
+    ['js', 'const answer = "hello";'],
+    ['typescript', 'const answer: string = "hello";'],
+    ['python', 'def greet(name):\n    return "hello"'],
+    ['py', 'def greet(name):\n    return "hello"'],
+    ['json', '{"answer": true}'],
+    ['jsonc', '// comment\n{"answer": true}'],
+    ['bash', 'echo "hello"'],
+    ['html', '<div class="greeting">hello</div>'],
+    ['css', '.greeting { color: red; }'],
+    ['sql', 'SELECT name FROM notes WHERE id = 42;']
+  ];
+  for (const [language, code] of codeSamples) {
+    for (const source of [
+      `\`\`\`${language}\n${code}\n\`\`\``,
+      `{kbd}\`Enter\`\n\n\`\`\`${language}\n${code}\n\`\`\``,
+      `\`\`\`{code} ${language}\n${code}\n\`\`\``
+    ]) {
+      const input = { uri: showcase.uri, version: -1, getText: () => source };
+      const rendered = (await vscode.commands.executeCommand<string>('markdown.api.render', input))!;
+      const block = new JSDOM(rendered).window.document.querySelector('pre code');
+      assert.ok(block, `Code block is rendered for ${language}`);
+      assert.equal(block.textContent?.trimEnd(), code);
+      assert.ok(block.querySelector('[class^="hljs-"]'), `${language} receives native syntax highlighting`);
+    }
+  }
+  for (const language of ['', 'unknown-language']) {
+    const code = '<tag> & literal';
+    for (const prefix of ['', '{kbd}`Enter`\n\n']) {
+      const input = { uri: showcase.uri, version: -1, getText: () => `${prefix}\`\`\`${language}\n${code}\n\`\`\`` };
+      const rendered = (await vscode.commands.executeCommand<string>('markdown.api.render', input))!;
+      const block = new JSDOM(rendered).window.document.querySelector('pre code');
+      assert.equal(block?.textContent?.trimEnd(), code);
+      assert.equal(block?.querySelector('span'), null);
+    }
+  }
+  console.log('PASS: native and MyST fenced blocks and code directives highlight 11 language IDs; plain and unknown languages remain escaped text');
+
   const document = new JSDOM(html).window.document;
   const footnoteDocument = {
     uri: showcase.uri, version: -1,

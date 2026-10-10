@@ -4,7 +4,7 @@
     "name": "Run Markdown Chroma",
     "type": "extensionHost",
     "request": "launch",
-    "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/examples/vault"],
+    "args": ["--extensionDevelopmentPath=${workspaceFolder}", "--disable-extensions", "${workspaceFolder}/examples/vault"],
     "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
     "preLaunchTask": "npm: build"
   }]
