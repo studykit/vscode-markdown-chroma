@@ -13,6 +13,7 @@ import '@citation-js/plugin-bibtex';
 import { parseFrontmatter } from './frontmatter';
 import { mystConfiguration, mergeSettings, type Settings } from './myst-config';
 import type { PreviewHost, RenderEnvironment } from './types';
+import { pluginRecovery } from './preview-plugins/events';
 
 // The official parser owns syntax. This adapter renders its AST in VS Code's
 // existing Markdown preview, without a project, server, shell or web theme.
@@ -38,6 +39,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     const plugins = file ? host.parseMystPlugins?.(source, file, { ...project, plugins: config?.project.plugins }) : undefined;
     const tree: ReturnType<typeof mystParse> = plugins?.tree ?? mystParse(source, { ...options, extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile });
     const problems = [...(plugins?.errors ?? []), ...(plugins?.messages ?? []).map(message => `MyST${message.line ? ` line ${message.line}` : ''}: ${message.reason}`)];
+    if (plugins?.errors.length || plugins?.diagnostics?.length) problems.push(pluginRecovery);
     if (plugins?.pending) problems.push('Loading MyST project plugins; Preview will refresh when ready.');
     tree.children.unshift(...[...new Set(problems)].map(value => ({ type: 'previewError', value })));
     walk(tree, node => {

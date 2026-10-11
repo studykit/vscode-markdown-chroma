@@ -174,7 +174,15 @@ The initial compatibility limits are:
 - Generated content uses the existing renderer, including headings, paragraphs, lists, definition lists, images, code, math, and in-document references. Existing built-in names take precedence; duplicate project names or aliases produce an error.
 - Loading and each document parse have a two-second deadline. Local modules and input documents have a 2 MiB limit; results have a 4 MiB limit, with bounded node depth and count. Errors identify the affected plugin where possible and leave the rest of the document readable.
 
-Save plugin files to reload them. Plugin/configuration changes restart the project's module graph, including imported helpers and installed dependencies. Unsaved Markdown is previewed, but unsaved plugin code is not executed. **Markdown Chroma: Refresh Vault Index** also reloads plugins. Definitions and cached generated content are kept separate by preview root and registered plugin set.
+Save plugin files to reload them. Saved-file changes are grouped over a 300 ms quiet period per preview root before restarting its module graphs. Detection includes configuration, imported helpers, installed dependencies, and other non-Markdown inputs such as JSON or CSV files read by plugins. Unsaved Markdown is previewed, but unsaved plugin code is not executed. While a parse is running, further edits to the same document replace its queued version; other documents and embeds keep their own requests. Definitions and cached generated content remain separate by preview root and registered plugin set.
+
+If a plugin fails:
+
+1. Read the short error in Preview. Source-located errors and warnings also appear in **Problems**; loading errors without a reliable document location stay in Preview and Output.
+2. Run **Markdown Chroma: Show Project Plugin Logs**, or select **Markdown Chroma: MyST Plugins** in the Output panel. The channel includes loading/execution/parsing/timeout details, exception stacks, and plugin console output with project context. Repeated renders do not repeat unchanged error reports. Log history is limited to 256 KiB, with up to 8 KiB per entry.
+3. Fix and save the file, or focus the Markdown source and run **Markdown Chroma: Reload Project Plugins**. This retries that document's registered plugin set without reloading other sets, including sets in the same preview root. Problems entries clear after recovery. Failed workers are not retried automatically on every render.
+
+**Markdown Chroma: Refresh Vault Index** remains available and reloads plugins for all preview roots. Reload Project Plugins requires a document whose plugins have already been loaded in Preview. Reloading itself does not save unsaved plugin edits.
 
 This setting affects Preview only. CLI and MCP continue to inspect plugin declarations statically and read original saved Markdown without executing plugins. See [index plugin behavior](CLI.md#myst-project-plugins).
 

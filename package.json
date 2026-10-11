@@ -97,6 +97,16 @@
         "command": "obsidianMarkdown.refreshVault",
         "title": "Refresh Vault Index",
         "category": "Markdown Chroma"
+      },
+      {
+        "command": "markdownChroma.reloadProjectPlugins",
+        "title": "Reload Project Plugins",
+        "category": "Markdown Chroma"
+      },
+      {
+        "command": "markdownChroma.showProjectPluginLogs",
+        "title": "Show Project Plugin Logs",
+        "category": "Markdown Chroma"
       }
     ],
     "configuration": {

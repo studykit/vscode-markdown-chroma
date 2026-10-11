@@ -72,6 +72,8 @@ Use VS Code's normal Markdown preview settings and your preferred theme. For a d
 | `markdown.preview.frontMatter` | `"table"` | Show frontmatter as a table, code block, or hide it |
 | `markdown.preview.breaks` | `false` | Display single line breaks in the preview |
 
+For project plugin errors, run **Markdown Chroma: Show Project Plugin Logs**. After fixing the plugin, save it or focus the Markdown source and run **Markdown Chroma: Reload Project Plugins**. See the [plugin troubleshooting steps](docs/PREVIEW.md#project-defined-myst-plugins).
+
 ## CLI and MCP guides
 
 - [CLI: installation, search, section reads, and automatic indexing](docs/CLI.md)

@@ -7,6 +7,8 @@ import { extendObsidianMarkdown } from './markdown';
 import { extendMystMarkdown } from './myst';
 import { resolvePreviewRoot, FileVault, isWithin } from './vault';
 import { PreviewPluginManager } from './preview-plugins/manager';
+import { PreviewPluginDiagnostics } from './preview-plugins/diagnostics';
+import { pluginRecovery } from './preview-plugins/events';
 import type { PreviewHost, RenderEnvironment } from './types';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -30,8 +32,24 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!disposed) void vscode.commands.executeCommand('markdown.preview.refresh');
     }, 150);
   };
-  const plugins = new PreviewPluginManager(refreshPreviews);
-  context.subscriptions.push(plugins);
+  const pluginOutput = vscode.window.createOutputChannel('Markdown Chroma: MyST Plugins');
+  const pluginProblems = vscode.languages.createDiagnosticCollection('markdownChroma.projectPlugins');
+  const pluginDiagnostics = new PreviewPluginDiagnostics(pluginOutput, items => {
+    const entries = new Map<string, vscode.Diagnostic[]>();
+    for (const item of items) {
+      const line = item.line! - 1, column = item.column! - 1;
+      const diagnostic = new vscode.Diagnostic(new vscode.Range(line, column, line, column + 1), `${item.reason}\n${pluginRecovery}`,
+        item.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Error);
+      diagnostic.source = 'Markdown Chroma: MyST Plugins'; diagnostic.code = item.phase;
+      const file = item.file!;
+      if (!entries.has(file)) entries.set(file, []);
+      entries.get(file)!.push(diagnostic);
+    }
+    pluginProblems.clear();
+    pluginProblems.set([...entries].map(([file, diagnostics]) => [vscode.Uri.file(file), diagnostics]));
+  });
+  const plugins = new PreviewPluginManager(refreshPreviews, undefined, undefined, event => pluginDiagnostics.accept(event));
+  context.subscriptions.push({ dispose() { plugins.dispose(); pluginDiagnostics.dispose(); pluginProblems.dispose(); pluginOutput.dispose(); } });
   const ensure = (file: string): Promise<FileVault> => {
     const root = rootFor(file);
     const existing = pending.get(root);
@@ -94,6 +112,17 @@ export async function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('markdown.showPreviewToSide', document.uri);
     }),
     vscode.commands.registerCommand('obsidianMarkdown.refreshVault', () => refresh(true)),
+    vscode.commands.registerCommand('markdownChroma.showProjectPluginLogs', () => { pluginDiagnostics.flush(); pluginOutput.show(true); }),
+    vscode.commands.registerCommand('markdownChroma.reloadProjectPlugins', async (uri?: vscode.Uri) => {
+      const document = uri ? await vscode.workspace.openTextDocument(uri) : vscode.window.activeTextEditor?.document;
+      if (!document || document.languageId !== 'markdown' || document.uri.scheme !== 'file') {
+        void vscode.window.showInformationMessage('Open the Markdown source document to reload its project plugins.'); return;
+      }
+      if (!plugins.reloadDocument(document.uri.fsPath)) {
+        void vscode.window.showInformationMessage('Open this document in Markdown Preview to load its project plugins.'); return;
+      }
+      refreshPreviews();
+    }),
     vscode.workspace.onDidOpenTextDocument(document => {
       if (document.languageId === 'markdown' && document.uri.scheme === 'file') void ensure(document.uri.fsPath);
     }),
@@ -118,7 +147,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const changed = (uri: vscode.Uri) => {
     if (uri.scheme !== 'file' || uri.fsPath.split(path.sep).some(segment => ['.git', '.obsidian'].includes(segment))) return;
     // Execute saved plugin modules only. Reload their entire dependency graph.
-    if (!/\.(?:md|markdown|mdown|mkd)$/i.test(uri.fsPath)) plugins.invalidate(uri.fsPath);
+    if (!/\.(?:md|markdown|mdown|mkd)$/i.test(uri.fsPath)) plugins.scheduleInvalidate(uri.fsPath);
     if (uri.fsPath.split(path.sep).includes('node_modules')) { refreshPreviews(); return; }
     clearTimeout(indexTimer);
     indexTimer = setTimeout(() => { if (!disposed) void refresh(); }, 300);

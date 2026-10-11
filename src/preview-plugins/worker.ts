@@ -17,6 +17,7 @@ import * as button from 'myst-ext-button';
 import * as builder from 'unist-builder';
 import * as vfiles from 'vfile';
 import { previewMystOptions } from '../myst-options';
+import type { PluginDiagnostic } from './events';
 
 const modules: Record<string, any> = {
   'myst-parser': parser, 'myst-directives': directives, 'myst-roles': roles,
@@ -36,10 +37,18 @@ if (typeof register !== 'function') throw new Error('MyST project plugins requir
 register(pathToFileURL(path.join(__dirname, 'preview-plugin-loader.cjs')), { data: { root: workerData.root, bridges } });
 
 const errors: string[] = [];
+const loadingDiagnostics: PluginDiagnostic[] = [];
+let diagnostics: PluginDiagnostic[] = [];
+let requestId = 0;
 const pluginDirectives: any[] = [], pluginRoles: any[] = [];
 const names = { directive: new Set<string>(), role: new Set<string>() };
 const errorNode = (value: string) => [{ type: 'previewError', value }];
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const detail = (error: unknown) => error instanceof Error ? error.stack : String(error);
+const loadingError = (plugin: string, error: unknown) => {
+  const reason = `MyST plugin ${plugin}: ${message(error)}`;
+  errors.push(reason); loadingDiagnostics.push({ phase: 'loading', plugin, reason, detail: detail(error) });
+};
 const asyncValue = (value: any) => value && typeof value.then === 'function';
 const normalizeType = (definition: any) => definition && ({ ...definition, type: definition.type === String ? 'string' : definition.type === Number ? 'number' : definition.type === Boolean ? 'boolean' : definition.type });
 
@@ -67,6 +76,9 @@ function wrap(spec: any, kind: 'directive' | 'role', label: string): any {
   if (declared.some(name => names[kind].has(name))) throw new Error(`Duplicate project ${kind} name or alias: ${spec.name}.`);
   declared.forEach(name => names[kind].add(name));
   const run = (data: any, file: any, context: any) => {
+    const location = data.node?.position?.start;
+    const diagnosticContext = { plugin: `${label} (${kind} ${spec.name})`, file: file.path, line: location?.line, column: location?.column };
+    parentPort!.postMessage({ id: requestId, executing: diagnosticContext });
     try {
       const firstMessage = file.messages.length;
       if (spec.validate) {
@@ -81,7 +93,11 @@ function wrap(spec: any, kind: 'directive' | 'role', label: string): any {
       const reported = file.messages.slice(firstMessage).filter((item: any) => item.fatal === true).at(-1);
       if (reported) return [...output, ...errorNode(`MyST plugin ${label} (${kind} ${spec.name}): ${reported.reason}`)];
       return output;
-    } catch (error) { return errorNode(`MyST plugin ${label} (${kind} ${spec.name}): ${message(error)}`); }
+    } catch (error) {
+      const reason = `MyST plugin ${label} (${kind} ${spec.name}): ${message(error)}`;
+      diagnostics.push({ ...diagnosticContext, phase: 'execution', reason, detail: detail(error) });
+      return errorNode(reason);
+    }
   };
   return { ...spec, alias: aliases, validate: undefined, run, arg: normalizeType(spec.arg), body: normalizeType(spec.body),
     options: spec.options && Object.fromEntries(Object.entries(spec.options).map(([name, value]) => [name, normalizeType(value)])) };
@@ -93,28 +109,30 @@ async function start() {
       const imported = await import(pathToFileURL(plugin.file).href);
       const definition = imported.default;
       if (!definition || typeof definition !== 'object' || Array.isArray(definition)) throw new Error('Expected a default-exported MyST plugin object.');
-      if (definition.transforms?.length) errors.push(`MyST plugin ${plugin.label}: transforms are not supported in Preview.`);
+      if (definition.transforms?.length) loadingError(plugin.label, new Error('transforms are not supported in Preview.'));
       for (const [key, kind, output] of [['directives', 'directive', pluginDirectives], ['roles', 'role', pluginRoles]] as const) {
         if (definition[key] !== undefined && !Array.isArray(definition[key])) throw new Error(`${key} must be an array.`);
         for (const spec of definition[key] ?? []) {
           try { output.push(wrap(spec, kind, plugin.label)); }
-          catch (error) { errors.push(`MyST plugin ${plugin.label}: ${message(error)}`); }
+          catch (error) { loadingError(plugin.label, error); }
         }
       }
-    } catch (error) { errors.push(`MyST plugin ${plugin.label}: ${message(error)}`); }
+    } catch (error) { loadingError(plugin.label, error); }
   }
-  parentPort!.postMessage({ ready: true, errors });
+  parentPort!.postMessage({ ready: true, errors, diagnostics: loadingDiagnostics });
   parentPort!.on('message', ({ id, source, file, settings }) => {
+    requestId = id; diagnostics = [];
     try {
       const vfile = new vfiles.VFile({ path: file });
       const tree = parser.mystParse(source, { ...previewMystOptions,
         directives: [...previewMystOptions.directives, ...pluginDirectives], roles: [...previewMystOptions.roles, ...pluginRoles],
         extensions: { ...previewMystOptions.extensions, math: settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile });
       const messages = vfile.messages.map(item => ({ reason: item.reason, line: item.line, column: item.column, fatal: item.fatal }));
-      const response = JSON.stringify({ tree, messages, errors });
+      diagnostics.push(...messages.map(item => ({ phase: 'parsing' as const, file, reason: item.reason, line: item.line ?? undefined, column: item.column ?? undefined, severity: item.fatal ? 'error' as const : 'warning' as const })));
+      const response = JSON.stringify({ tree, messages, errors, diagnostics });
       if (Buffer.byteLength(response) > 4 * 1024 * 1024) throw new Error('Plugin result exceeds the 4 MiB limit.');
       parentPort!.postMessage({ id, result: JSON.parse(response) });
-    } catch (error) { parentPort!.postMessage({ id, error: message(error) }); }
+    } catch (error) { parentPort!.postMessage({ id, error: message(error), detail: detail(error) }); }
   });
 }
-void start().catch(error => { parentPort!.postMessage({ failed: message(error) }); });
+void start().catch(error => { parentPort!.postMessage({ failed: message(error), detail: detail(error) }); });
