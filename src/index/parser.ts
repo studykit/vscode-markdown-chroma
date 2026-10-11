@@ -11,6 +11,7 @@ import { proofDirective } from 'myst-ext-proof';
 import { exerciseDirectives } from 'myst-ext-exercise';
 import { buttonRole } from 'myst-ext-button';
 import { parseFrontmatter } from '../frontmatter';
+import type { PluginNames } from './plugins';
 import { globalId, normalizeTag, type ContentItem, type DocumentIndex, type Reference, type Section, type Table, type Target } from './types';
 
 interface Node { type: string; children?: Node[]; position?: { start: { line: number; column: number }; end: { line: number; column: number } }; [key: string]: any }
@@ -119,7 +120,7 @@ function indexTokenizer(options: Parameters<typeof createTokenizer>[0], source: 
   return md;
 }
 
-export function parseIndex(file: string, source: string, settings: Record<string, any> = {}): DocumentIndex {
+export function parseIndex(file: string, source: string, settings: Record<string, any> = {}, plugins?: PluginNames): DocumentIndex {
   const frontmatter = parseFrontmatter(source);
   const lines = source.split('\n');
   const lastLine = lines.length - (source.endsWith('\n') ? 1 : 0);
@@ -143,7 +144,17 @@ export function parseIndex(file: string, source: string, settings: Record<string
     link: { type: 'link', getAttrs: (token: any) => ({ url: token.attrGet('href'), chromaOffset: token.meta?.chromaOffset, chromaSource: token.meta?.chromaSource }) },
     image: { type: 'image', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => ({ url: token.attrGet('src'), alt: token.content }) },
   } }) as Node;
-  for (const message of vfile.messages) document.diagnostics.push({ code: 'mystSyntax', file, line: message.line ?? undefined, message: message.message, severity: message.fatal ? 'error' : 'warning' });
+  const pluginDirectives = new Set(plugins?.directives), pluginRoles = new Set(plugins?.roles);
+  for (const message of vfile.messages) {
+    const extension = /^unknown (directive|role): (.+)$/.exec(message.message);
+    if (extension && (extension[1] === 'directive' ? pluginDirectives : pluginRoles).has(extension[2])) continue;
+    document.diagnostics.push({ code: 'mystSyntax', file, line: message.line ?? undefined, message: message.message, severity: message.fatal ? 'error' : 'warning' });
+  }
+  for (const [type, registered] of [['mystDirective', pluginDirectives], ['mystRole', pluginRoles]] as const)
+    for (const node of all(raw, type)) if (registered.has(node.name)) document.diagnostics.push({ code: 'pluginContentNotIndexed', file,
+      line: node.position?.start.line, severity: 'warning', message: `Project plugin ${type === 'mystDirective' ? 'directive' : 'role'} "${node.name}" is declared, but its generated content is not indexed.` });
+  if (plugins?.transforms || plugins?.unavailable) document.diagnostics.push({ code: 'pluginContentNotIndexed', file, severity: 'warning',
+    message: 'Project plugin transforms or uninspected definitions may change document content. Plugins are not executed while indexing.' });
   document.diagnostics = document.diagnostics.filter((d, i, a) => a.findIndex(v => v.code === d.code && v.line === d.line && v.message === d.message) === i);
   const slugger = new GithubSlugger(); slugger.slug('preamble');
   let pending: Node[] = [];

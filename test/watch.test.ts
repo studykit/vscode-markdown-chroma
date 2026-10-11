@@ -88,6 +88,26 @@ test('watch includes config, bibliography and assets; excludes hidden trees, sym
   } finally { await handle.close(); await f.cleanup(); }
 });
 
+test('watch reparses registered plugin changes without changing the Markdown source', { timeout: 10000 }, async () => {
+  const f = await fixture();
+  await fs.writeFile(path.join(f.root, 'myst.yml'), 'project:\n  plugins: [plugin.mjs]\n');
+  await fs.writeFile(path.join(f.root, 'plugin.mjs'), `export default {roles:[{name:'custom', run:()=>[]}]};`);
+  await fs.writeFile(path.join(f.root, 'a.md'), '# One\n{custom}`value`\n');
+  // Short polling also covers coalesced native events during concurrent test runs.
+  const handle = await startIndexWatch(f.service, { debounceMs: 40, pollIntervalMs: 120, onRefresh: result => f.snapshots.push(result), onError: error => f.errors.push(error) });
+  const diagnostics = async () => (await f.snapshot()).documents.find((d: any) => d.file === 'a.md').diagnostics as { code: string; message: string }[];
+  try {
+    assert.ok(!(await diagnostics()).some(d => d.code === 'mystSyntax'));
+    await fs.writeFile(path.join(f.root, 'plugin.mjs'), `export default {roles:[{name:'renamed', run:()=>[]}]};`);
+    await until(async () => (await diagnostics()).some(d => d.message === 'unknown role: custom'));
+    await fs.writeFile(path.join(f.root, 'plugin.mjs'), `export default {roles:[{name:'custom', run:()=>[]}]};`);
+    await until(async () => !(await diagnostics()).some(d => d.code === 'mystSyntax'));
+    await fs.rm(path.join(f.root, 'plugin.mjs'));
+    await until(async () => (await diagnostics()).some(d => d.code === 'pluginDefinitionsUnavailable'));
+    assert.deepEqual(f.errors, []);
+  } finally { await handle.close(); await f.cleanup(); }
+});
+
 test('watch excludes the same physical cache when configured through a symlink alias', { timeout: 10000 }, async () => {
   const f = await fixture();
   await fs.mkdir(path.join(f.root, 'cache'));

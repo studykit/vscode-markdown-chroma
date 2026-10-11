@@ -41,6 +41,18 @@ export function mystConfiguration(host: PreviewHost, env: RenderEnvironment): { 
         return relative.startsWith('.') ? relative : `./${relative}`;
       });
     }
+    // Preserve the declaring config's directory through extends and nested documents.
+    if (Array.isArray(own.plugins)) own.plugins = own.plugins.map((entry: unknown) => {
+      const rebase = (target: string) => {
+        if (path.isAbsolute(target) || /^[a-z][a-z\d+.-]*:/i.test(target) || /[\0\\]/.test(target)) return target;
+        const relative = path.relative(path.dirname(source.fsPath), path.resolve(path.dirname(file), target)).split(path.sep).join('/');
+        return relative.startsWith('.') ? relative : `./${relative}`;
+      };
+      if (typeof entry === 'string') return rebase(entry);
+      if (entry && typeof entry === 'object' && !Array.isArray(entry) && 'path' in entry && typeof entry.path === 'string')
+        return { ...entry, path: rebase(entry.path) };
+      return entry;
+    });
     return mergeSettings(project, own);
   };
   let directory = path.dirname(source.fsPath);

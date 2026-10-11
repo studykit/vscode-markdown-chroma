@@ -153,7 +153,7 @@ This ID mode preserves selection order and removes repeated IDs. It retains sepa
 markdown-chroma watch --root ./notes
 ```
 
-Watch indexes once at startup, then groups save, creation, rename, and deletion events over 300 ms before refreshing. It covers Markdown, MyST configuration, bibliography, and attachment changes. A full hash scan every 30 seconds covers missed events. Stop it with `Ctrl+C`.
+Watch indexes once at startup, then groups save, creation, rename, and deletion events over 300 ms before refreshing. It covers Markdown, MyST configuration, local plugin definitions, bibliography, and attachment changes. A full hash scan every 30 seconds covers missed events. Stop it with `Ctrl+C`.
 
 Watch writes text updates such as `Indexed 12 documents.` and writes issues or failures to stderr. Add `--json` for concise JSON Lines, or `--debug` for full refresh metadata. Change its timing with `--debounce-ms` and `--poll-interval-ms`:
 
@@ -175,11 +175,19 @@ Queries also refresh saved-file snapshots, so watch is optional. Unsaved edits b
 
 Ordinary queries report one short summary when relevant content could not be fully indexed. File and section reads ignore unrelated parsing issues elsewhere in the project; global searches and backlinks remain project-wide. Use `markdown-chroma index --root ./notes --debug` for all diagnostic messages. Detailed output uses project-wide status, so its exit code may differ from a successful scoped read.
 
+## MyST project plugins
+
+Local plugins registered in `project.plugins` in `myst.yml` or `myst.yaml` are inspected automatically, without executing their code. Chroma recognizes literal role/directive names and aliases from JavaScript default exports and executable Python plugins with a top-level literal `plugin` dictionary. Paths follow the configuration file that declares them, including inherited configuration.
+
+Confirmed names do not produce unknown role/directive errors. Unknown names and ordinary MyST option errors still produce diagnostics. Remote plugins, other executables, imported or computed specifications, and unreadable files cannot be inspected; registering a path alone does not confirm its names. Custom plugin options and callback behavior are not validated.
+
+Plugins can generate headings, terms, images, or references that are absent from saved Markdown. Structural lists, searches, and backlinks report `complete: false` with a short explanation when plugin output may affect them. Explicit source reads still return the original Markdown and ignore this generation limitation; name-only term reads retain project-wide completeness. Configuration or inspection failures remain relevant. `--debug` distinguishes `pluginContentNotIndexed`, `pluginDefinitionsUnavailable`, and actual `mystSyntax` diagnostics.
+
 ## Cache and limits
 
 - The cache lives in the user cache directory under `markdown-chroma`, separately for each root. Use `--cache-dir` to choose another location. `index --rebuild` reparses everything.
 - `.md` and `.markdown` documents are indexed. Hidden paths, `node_modules`, `_build`, symlinks, and the root's cache directory are excluded.
-- MyST configuration and document frontmatter apply to parsing. Source, configuration, and bibliography files each have a 2 MiB limit.
+- MyST configuration and document frontmatter apply to parsing. Source, configuration, local plugin, and bibliography files each have a 2 MiB limit. Plugin edits invalidate affected cached records.
 - Default responses and `--json` contain information for finding and reading content. Internal index records are available through `--debug` and the public Node API.
 - Partial results exit with code `1` and issues go to stderr; JSON results also have `complete: false`. Invalid arguments exit with code `2`. Ambiguous choices provide candidates for the next read.
 - Index support differs from preview support: Obsidian block IDs and `%%…%%` comments have no special index handling. External table data is neither executed nor downloaded.

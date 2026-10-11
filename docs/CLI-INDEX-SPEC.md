@@ -81,6 +81,14 @@ Distinguish layout from content by directive name and parsed meaning. Do not exp
 
 Labels attached to layout directives are not queryable content targets in v1. Support for references to those labels is future work. Source extraction preserves the layout directives themselves.
 
+### Project plugin declarations
+
+Inspect local entries in `project.plugins` from the nearest `myst.yml` or `myst.yaml`, including inherited settings and page overrides. Rebase configuration paths relative to the file that declares them; page overrides use the Markdown file's directory. Apply the same root, traversal/cache exclusion, symlink, stable-read, UTF-8, and 2 MiB constraints used for saved source. Never execute JavaScript, Python, shell commands, callbacks, or transforms, and never download remote plugins.
+
+Recognize literal names and aliases reached through a JavaScript ESM default export's `directives` and `roles` arrays. Follow local `const` references and literal spreads, but reject getters, factories, imported definitions, mutations, cycles, and other dynamic metadata. Executable Python plugins support a top-level literal `plugin` dictionary; dynamically constructed specifications and other executable formats remain uninspected. A configured filename alone does not register a role or directive name. Custom plugin options and runtime behavior are outside this inspection contract.
+
+For confirmed names, omit only the corresponding unknown-role/directive syntax errors. Retain unknown names, kind mismatches, and other parser messages. Record `pluginContentNotIndexed` for occurrences of confirmed extensions, and file-wide for declared transforms or uninspected definitions. Record `pluginDefinitionsUnavailable` when a configured entry cannot be inspected. These are capability/configuration diagnostics, not declarations that the authored extension syntax is invalid. Plugin content hashes participate in each affected document's configuration fingerprint; modifications and deletions must invalidate cached parsing.
+
 ## CLI commands
 
 The command name is `markdown-chroma`. Provide the CLI entry point through the npm package's `bin` field, requiring Node.js 20 or later. Export the shared index module as `markdown-chroma/index`. Include CLI and index bundles in the VSIX as well; separate VS Code command integration is future work.
@@ -558,15 +566,18 @@ Partial JSON retrieval results include one brief `issues` summary, with a file w
 
 Retrieval completeness follows the requested scope. File queries exclude diagnostics from unrelated documents; section reads and explicit item selections also exclude located MyST syntax diagnostics outside their selected source ranges. Frontmatter, configuration, bibliography, and unlocated diagnostics for selected files remain relevant throughout the file. Global discovery, name-only term lookup, and backlinks retain snapshot-wide completeness because errors elsewhere may hide matches or incoming references. Summarize relevant diagnostics without repeating all parser messages. Per-item selection failures always keep `complete: false`.
 
+Structural discovery remains partial when project plugin output can affect the result. Explain that plugins are not executed and generated content is not included, without presenting confirmed names as syntax errors. Successful explicit saved-source reads omit `pluginContentNotIndexed` from retrieval status, since their returned source is unchanged. Name-only term reads and batches containing a term without `file` retain this limitation because plugin output could hide another matching definition. Inspection failures remain file-wide configuration issues. Raw `read-lines` continues to bypass configuration and indexing altogether. Full Node/debug results retain every capability diagnostic and snapshot-wide completeness.
+
 The Node API and `--debug` deliberately retain snapshot-wide completeness and diagnostics, even for a file query; their status and exit code can therefore differ from scoped retrieval output. `index` and watch refreshes are always snapshot-wide. Obtain detailed diagnostics with `index --debug` or the detailed query output.
 
-During project queries, report YAML or MyST syntax errors and read failures as document diagnostics. Set `complete: false` and exit with a nonzero code to indicate omissions. Limit each document, configuration, and bibliography file to 2 MiB; report oversized files as diagnostics. Unresolved references alone do not make results partial, so retain their status in a normal index. Use exit code 0 for successful queries, 1 for partial results or query failures, and 2 for invalid arguments. For external table declarations unsupported by the installed parser, preserve available declaration metadata as `referenceOnly` and include syntax diagnostics.
+During project queries, report YAML or MyST syntax errors and read failures as document diagnostics. Set `complete: false` and exit with a nonzero code to indicate omissions. Limit each document, configuration, local plugin, and bibliography file to 2 MiB; report oversized files as diagnostics. Unresolved references alone do not make results partial, so retain their status in a normal index. Use exit code 0 for successful queries, 1 for partial results or query failures, and 2 for invalid arguments. For external table declarations unsupported by the installed parser, preserve available declaration metadata as `referenceOnly` and include syntax diagnostics.
 
 ## Validation criteria
 
 - Index documents mixing ordinary Markdown, MyST, and Obsidian syntax in a project without a configuration directory.
 - Ensure default CLI output is readable text, `--json` is directly consumable retrieval JSON, and `--debug` exposes detailed records. Keep prose diagnostics out of stdout and preserve section title hierarchy.
 - Verify CLI `--json` and MCP retrieval responses contain no internal index fields, while full Node API and CLI `--debug` records retain their contracts. Preserve original source, selection candidates, and partial-result issues.
+- Verify registered local plugin names/aliases, inherited paths, static Python declarations, genuine unknown names, and ordinary option errors. Reject dynamic guesses and excluded/unreadable plugins without executing code. Verify plugin edits invalidate warm records, generation limitations affect discovery, explicit source stays complete, and both MCP transports match CLI retrieval behavior.
 - Verify tags, typed property comparisons, array membership, property existence, and combined conditions.
 - Exclude example links and tags in code, math, MyST comments, and HTML comments.
 - Collect actual references inside directives and callouts without duplicating repeated AST representations.
@@ -612,7 +623,7 @@ During project queries, report YAML or MyST syntax errors and read failures as d
 | Wikilinks in frontmatter properties | Exclude from backlinks; property values remain searchable |
 | Change detection accuracy and cost | Check all hashes on every query; reparse only changed documents |
 | Automatic watching | Shared watcher for CLI watch and MCP; 300 ms debounce, 30-second fallback scans, and existing refresh logic |
-| Large files | Limit each document, configuration, and bibliography file to 2 MiB; diagnose oversized files |
+| Large files | Limit each document, configuration, local plugin, and bibliography file to 2 MiB; diagnose oversized files |
 | CLI distribution | npm `bin`, Node.js 20 or later; include CLI and shared index bundles in the VSIX |
 
 ## Parser extension references

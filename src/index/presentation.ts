@@ -9,6 +9,9 @@ export interface SectionOutline { title: string; id?: string; children?: Section
 /** Full Node/debug results retain snapshot diagnostics; retrieval status follows the requested scope. */
 export function retrievalStatus(result: QueryResult, query?: IndexQuery) {
   const all = result.diagnostics ?? [];
+  const globalTermSelection = (query?.command === 'read-term' && !!query.arguments.names && !query.arguments.file)
+    || (query?.command === 'read' && query.arguments.selections?.some(selection => selection.kind === 'term' && !selection.file));
+  const sourceRead = !globalTermSelection && (query?.command === 'read' || query?.command.startsWith('read-'));
   const files = new Map<string, { startLine: number; endLine: number }[] | undefined>();
   const scopedBatch = query?.command === 'read' && query.arguments.selections?.every(s => !!s.file);
   if (scopedBatch && query?.command === 'read') for (const s of query.arguments.selections!) files.set(posix.normalize(s.file!), undefined);
@@ -24,21 +27,30 @@ export function retrievalStatus(result: QueryResult, query?: IndexQuery) {
       ranges.push({ startLine: item.startLine, endLine: item.endLine }); files.set(item.file, ranges);
     }
   }
-  const diagnostics = files.size ? all.filter(issue => {
+  const relevant = all.filter(issue => !sourceRead || issue.code !== 'pluginContentNotIndexed');
+  const diagnostics = files.size ? relevant.filter(issue => {
     if (!issue.file) return true;
     // Scan failures in containing directories can affect any requested file below them.
     if (issue.code === 'directoryReadFailed') return [...files.keys()].some(file => !issue.file || file.startsWith(issue.file + '/'));
     if (!files.has(issue.file)) return false;
     const ranges = files.get(issue.file);
     return !ranges || issue.code !== 'mystSyntax' || !issue.line || ranges.some(range => issue.line! >= range.startLine && issue.line! <= range.endLine);
-  }) : all;
+  }) : relevant;
   const itemError = 'items' in result && result.items.some(item => item.status !== 'ok');
   const complete = result.complete || (!!all.length && !diagnostics.length && !itemError);
   const affected = [...new Set(diagnostics.map(issue => issue.file).filter(Boolean))];
   const action = query?.command === 'read-lines' ? 'read' : 'indexed';
+  const plugins = diagnostics.some(issue => issue.code === 'pluginContentNotIndexed' || issue.code === 'pluginDefinitionsUnavailable');
+  const other = diagnostics.some(issue => issue.code !== 'pluginContentNotIndexed' && issue.code !== 'pluginDefinitionsUnavailable');
+  const unavailable = diagnostics.some(issue => issue.code === 'pluginDefinitionsUnavailable');
+  const message = [
+    ...(other ? [`Some content could not be fully ${action}${affected.length > 1 ? ` in ${affected.length} files` : ''}. Results may be partial.`] : []),
+    ...(unavailable ? ['Some project plugin definitions could not be inspected.'] : []),
+    ...(plugins ? ['Project plugins are not executed; generated content is not included in the index.'] : []),
+  ].join(' ');
   const issues: { file?: string; message: string }[] = !diagnostics.length ? [] : affected.length === 1
-    ? [{ file: affected[0]!, message: `Some content could not be fully ${action}. Results may be partial.` }]
-    : [{ message: `Some content could not be fully ${action}${affected.length ? ` in ${affected.length} ${affected.length === 1 ? 'file' : 'files'}` : ''}. Results may be partial.` }];
+    ? [{ file: affected[0]!, message }]
+    : [{ message }];
   return { complete, diagnostics, issues };
 }
 

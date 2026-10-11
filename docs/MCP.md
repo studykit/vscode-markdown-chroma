@@ -119,7 +119,7 @@ The root must be an existing directory and stays fixed for the lifetime of the p
 
 Both stdio and HTTP watch saved files by default. Events are grouped over 300 ms, then the existing refresh checks the whole file list and hashes and reparses only changed documents. A full scan every 30 seconds covers missed events and replaced directories. Pass `--no-watch` to disable background watching; structural queries still refresh saved-file snapshots; line reads access saved source directly.
 
-Watch covers Markdown, MyST configuration, bibliography, and attachment changes. Hidden paths, `node_modules`, `_build`, symlinks, and the root's cache directory are excluded. SIGINT/SIGTERM stops both watcher and transport. The [CLI watch command](CLI.md#keep-the-index-up-to-date) uses the same core and can run independently.
+Watch covers Markdown, MyST configuration, local plugin definitions, bibliography, and attachment changes. Hidden paths, `node_modules`, `_build`, symlinks, and the root's cache directory are excluded. SIGINT/SIGTERM stops both watcher and transport. The [CLI watch command](CLI.md#keep-the-index-up-to-date) uses the same core and can run independently.
 
 ## Tools
 
@@ -181,6 +181,8 @@ The existing `ids` mode reads terms and glossaries, deduplicates IDs, and preser
 Results contain retrieval information and `complete`. They omit cache paths, versions, hashes, parser ranges and records. Observed shell-search line numbers may be supplied to read tools. MCP returns the same concise result as `structuredContent` and JSON text `content`. Partial results use `complete: false` and `isError: true`, preserving successful items alongside `issues` or per-item errors. SDK input validation errors may have text content without `structuredContent`.
 
 `issues` contains one short summary of relevant problems. File queries and section or explicit-item reads exclude unrelated document or source-range syntax diagnostics. File-wide frontmatter/configuration problems remain relevant. Global discovery, name-only term lookup, and backlinks retain project-wide completeness, as parsing failures can hide matches. Per-item errors and budget omissions always make a batch partial. The Node API and CLI `--debug` retain all snapshot diagnostics and project-wide status.
+
+Both transports share [MyST plugin inspection](CLI.md#myst-project-plugins): confirmed static local role/directive declarations do not produce unknown-syntax errors, and plugin code is never executed. Discovery reports `complete: false` and `isError: true` when generated content may be missing. Explicit saved-source reads ignore this generation limitation, while name-only term selection remains conservative. Uninspectable definitions and real syntax errors retain their diagnostics. Source content is never rewritten.
 
 For example, `list_sections` returns:
 

@@ -13,6 +13,7 @@ import { mystConfiguration, mergeSettings } from '../myst-config';
 import { isWithin } from '../vault';
 import { extract, hash, parseIndex } from './parser';
 import { isExcludedIndexPath } from './paths';
+import { inspectPlugin, type PluginNames } from './plugins';
 import { IndexError, PARSER_VERSION, SCHEMA_VERSION, type ContentItem, type Diagnostic, type DocumentIndex, type ProjectIndex, type Reference, type Resolution, type Section } from './types';
 
 export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
@@ -134,6 +135,41 @@ export class MarkdownIndex {
     return { keys: [...new Set(keys)], fingerprint: hash(JSON.stringify(fingerprints)), diagnostics };
   }
 
+  private plugins(settings: Record<string, any>, file: string, cache: Map<string, { names: PluginNames; hash: string }>) {
+    const names: PluginNames = { directives: [], roles: [], transforms: false, unavailable: false };
+    const diagnostics: Diagnostic[] = [], fingerprints: string[] = [];
+    const unavailable = (message: string) => {
+      names.unavailable = true;
+      if (!diagnostics.some(issue => issue.message === message)) diagnostics.push({ code: 'pluginDefinitionsUnavailable', file, severity: 'warning', message });
+    };
+    if (settings.plugins === undefined) return { names, diagnostics, fingerprints };
+    if (!Array.isArray(settings.plugins)) { unavailable('MyST project.plugins must be a list of local plugin entries.'); return { names, diagnostics, fingerprints }; }
+    for (const entry of settings.plugins) {
+      const target = typeof entry === 'string' ? entry : entry?.path;
+      const type = typeof entry === 'string' ? 'javascript' : entry?.type;
+      if (typeof target !== 'string' || !target || /[\0\\]/.test(target) || path.isAbsolute(target) || /^[a-z][a-z\d+.-]*:/i.test(target)) {
+        unavailable('A registered plugin has an invalid, absolute, or remote path. Only local relative paths inside the root can be inspected.'); continue;
+      }
+      const relative = portable(path.relative(this.root, path.resolve(this.root, path.dirname(file), target)));
+      const kind = type === 'javascript' && /\.m?js$/i.test(target) ? 'javascript'
+        : type === 'executable' && /\.py$/i.test(target) ? 'python' : undefined;
+      if (!kind) { unavailable(`Unsupported plugin format: ${target}. Only JavaScript modules and literal Python plugin dictionaries can be inspected.`); continue; }
+      if (!this.files.has(relative)) { unavailable(`Registered plugin is missing or excluded from the root: ${target}`); continue; }
+      try {
+        let inspected = cache.get(relative + ':' + kind);
+        if (!inspected) {
+          const source = this.readFile(relative);
+          inspected = { names: inspectPlugin(source, kind), hash: hash(source) }; cache.set(relative + ':' + kind, inspected);
+        }
+        fingerprints.push(inspected.hash);
+        names.directives.push(...inspected.names.directives); names.roles.push(...inspected.names.roles);
+        names.transforms ||= inspected.names.transforms;
+        if (inspected.names.unavailable) unavailable(`Cannot confirm all static plugin definitions: ${target}. Dynamic, imported, mutated, or invalid specifications are not evaluated.`);
+      } catch { unavailable(`Cannot read registered plugin as stable UTF-8 within the 2 MiB limit: ${target}`); }
+    }
+    return { names, diagnostics, fingerprints };
+  }
+
   private loadCache(): ProjectIndex | undefined {
     try {
       const data = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8'));
@@ -191,6 +227,7 @@ export class MarkdownIndex {
       const previous = rebuild ? undefined : this.loadCache();
       const old = new Map(previous?.documents.map(document => [document.file, document]) ?? []);
       const documents: DocumentIndex[] = [];
+      const plugins = new Map<string, { names: PluginNames; hash: string }>();
       for (const file of [...this.files].sort()) {
         if (!/\.(?:md|markdown)$/i.test(file)) continue;
         const cached = old.get(file); old.delete(file);
@@ -201,13 +238,15 @@ export class MarkdownIndex {
           const frontmatter = parseDocumentForConfig(source);
           const settings = mergeSettings(config.project, frontmatter);
           const bib = this.bibliography(settings, file);
-          const configHash = hash(JSON.stringify([settings, config.error, bib.fingerprint, bib.diagnostics]));
+          const plugin = this.plugins(settings, file, plugins);
+          const configHash = hash(JSON.stringify([settings, config.error, bib.fingerprint, bib.diagnostics, plugin.fingerprints, plugin.diagnostics]));
           let document: DocumentIndex;
           if (cached?.sourceHash === hash(source) && cached.configHash === configHash) { document = structuredClone(cached); this.stats.reused++; }
           else {
-            document = parseIndex(file, source, settings); this.stats.parsed++;
+            document = parseIndex(file, source, settings, plugin.names); this.stats.parsed++;
             if (config.error) document.diagnostics.push({ code: 'invalidConfig', message: config.error, file, severity: 'error' });
             document.diagnostics.push(...bib.diagnostics); document.bibliographyKeys = bib.keys;
+            document.diagnostics.push(...plugin.diagnostics);
           }
           document.configHash = configHash; document.signature = `${signature.ino}:${signature.size}:${signature.mtimeNs}:${signature.ctimeNs}`;
           documents.push(document);
