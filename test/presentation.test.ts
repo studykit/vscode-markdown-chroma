@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { runCli } from '../src/index/cli';
 import { presentError } from '../src/index/presentation';
 import { assertRetrievalResult } from './retrieval-contract';
+import { IndexService } from '../src/index/query';
+import { presentResult } from '../src/index/presentation';
 
 test('CLI text and JSON expose retrieval choices while debug retains program records', async t => {
   const directory = await fs.mkdtemp(path.join(tmpdir(), 'chroma-presentation-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -97,4 +99,44 @@ test('CLI partial results and query failures keep text, retrieval JSON and debug
   assert.match(jsonValidation.error.message, /^headingPath:/);
   const debugValidation = JSON.parse((await cli(...invalid, '--debug')).stdout);
   assert.ok(Array.isArray(JSON.parse(debugValidation.error.message)));
+});
+
+test('retrieval diagnostics are summarized and scoped while Node and debug retain the full snapshot', async t => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'chroma-scoped-issues-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.writeFile(path.join(root, 'healthy.md'), '# Healthy\nText.\n');
+  await fs.writeFile(path.join(root, 'broken.md'), '---\na: 1\na: 2\n---\n# Broken\n');
+  await fs.writeFile(path.join(root, 'mixed.md'), '# Guide\n## Good\nSafe.\n\n:::{glossary}\nAST\n: Tree.\n:::\n\n## Broken\n{unknown}`one` {unknown}`two`\n');
+  const cli = async (...args: string[]) => {
+    let stdout = '', stderr = '';
+    const code = await runCli([...args, '--root', root], { stdout: value => { stdout += value; }, stderr: value => { stderr += value; } });
+    return { code, stdout, stderr, json: () => JSON.parse(stdout) };
+  };
+  const list = await cli('notes', '--json');
+  assert.equal(list.code, 1); assert.equal(list.json().complete, false);
+  assert.equal(list.json().issues.length, 1); assert.match(list.json().issues[0].message, /2 files/);
+  assert.equal(list.stderr.split('\n').filter(Boolean).length, 1);
+  const healthy = await cli('sections', 'healthy.md', '--json');
+  assert.equal(healthy.code, 0); assert.deepEqual(healthy.json(), { complete: true, file: 'healthy.md', sections: [{ title: 'Healthy' }] });
+  assert.equal(healthy.stderr, '');
+  const detailed = await cli('sections', 'healthy.md', '--debug');
+  assert.equal(detailed.code, 1); assert.equal(detailed.json().complete, false);
+  assert.ok(detailed.json().diagnostics.some((issue: any) => issue.file === 'broken.md'));
+  assert.match(detailed.stderr, /unknown role/);
+  const bad = await cli('sections', 'broken.md', '--json');
+  assert.equal(bad.code, 1); assert.deepEqual(bad.json().issues, [{ file: 'broken.md', message: 'Some content could not be fully indexed. Results may be partial.' }]);
+  const goodRead = await cli('read-section', 'mixed.md', '--title', 'Good', '--json');
+  assert.equal(goodRead.code, 0); assert.equal(goodRead.json().complete, true); assert.equal(goodRead.stderr, '');
+  const badRead = await cli('read-section', 'mixed.md', '--title', 'Broken', '--json');
+  assert.equal(badRead.code, 1); assert.equal(badRead.json().complete, false); assert.equal(badRead.json().issues.length, 1);
+  assert.match(badRead.json().content, /\{unknown\}/);
+  const term = await cli('read-term', 'AST', '--file', 'mixed.md', '--json');
+  assert.equal(term.code, 0); assert.equal(term.json().complete, true);
+  assert.equal((await cli('read-term', 'AST', '--json')).code, 1); // Global name lookup may miss another definition in a broken document.
+  const batch = await cli('read', '--id', 'mixed.md#term-ast', '--id', 'missing', '--json');
+  assert.equal(batch.code, 1); assert.equal(batch.json().complete, false);
+  assert.equal(batch.json().items[0].content, 'AST\n: Tree.\n'); assert.equal(batch.json().items[1].error.code, 'itemNotFound');
+  const query = { command: 'sections' as const, arguments: { file: 'healthy.md' } };
+  const raw = await new IndexService(root).execute(query);
+  assert.equal(raw.complete, false); assert.ok(raw.diagnostics!.length > 1);
+  assert.deepEqual(presentResult(raw, query), healthy.json());
 });

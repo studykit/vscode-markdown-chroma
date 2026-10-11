@@ -1,6 +1,6 @@
 # Markdown Chroma CLI v1 indexing and structure queries
 
-The CLI finds notes in Markdown and MyST projects, lists their sections, tables, images, glossaries, and terms, and reads the original source of selected sections, term definitions, or glossaries. It stores an index on disk for tag and frontmatter property searches and backlink queries. The goal is to retrieve content through document structure and meaningful content items, so an LLM can select what to read without guessing line numbers.
+The CLI finds notes in Markdown and MyST projects by indexed metadata, lists their sections, tables, images, glossaries, and terms, and reads the original source of selected sections, frontmatter, term definitions, or glossaries. It stores a structural index on disk for tag and frontmatter property searches and backlink queries. The goal is to retrieve content through document structure and meaningful content items, so an LLM can select what to read without guessing line numbers.
 
 Status: specification for the implemented CLI v1 behavior. Default CLI text, CLI `--json`, and MCP responses follow the retrieval contract below; detailed index records are a separate programmatic interface.
 
@@ -53,6 +53,7 @@ Use `myst-parser`'s `createTokenizer()` to add token rules and `tokensToMyst()` 
 | Syntax | Index behavior |
 | --- | --- |
 | Markdown headings | Collect sections and heading paths |
+| MyST `+++` document blocks | Collect document-level headings across blocks, retaining labels and exact source ranges |
 | MyST heading labels | Collect labels associated with headings |
 | MyST figure, math, and other block labels | Collect reference targets separately from heading sections |
 | Markdown and MyST tables | Collect table metadata and source ranges for listing |
@@ -102,6 +103,12 @@ markdown-chroma search --root ./docs --tag project
 markdown-chroma search --root ./docs --where '{"status":"draft"}'
 markdown-chroma search --root ./docs --has-property author
 markdown-chroma search --root ./docs --tag project --where '{"status":"draft"}'
+
+# Use shell search, then read observed source positions or frontmatter
+rg -n -F 'cache' ./docs
+markdown-chroma read-lines guide.md --root ./docs --start 40 --end 50
+markdown-chroma read-section guide.md --root ./docs --line 42
+markdown-chroma read-frontmatter guide.md --root ./docs
 
 # Find incoming links to a document
 markdown-chroma backlinks guide.md --root ./docs
@@ -155,7 +162,7 @@ markdown-chroma read --root ./docs --id 'glossary.md#term-ast' --id 'syntax.md#g
 markdown-chroma backlinks glossary.md --root ./docs --term term-myst-markdown
 ```
 
-`sections` returns a title outline by default. Other list, search, backlink, and index refresh commands return readable text. `read-section`, `read-term`, `read-glossary`, and `read` return original Markdown source by default. `--json` returns concise retrieval JSON with the same information as MCP. `--debug` returns detailed JSON records for troubleshooting and takes precedence over `--json`. Write issues and failures to stderr so stdout contains only result data.
+`sections` returns a title outline by default. Other list, search, backlink, and index refresh commands return readable text. `read-section`, `read-lines`, `read-frontmatter`, `read-term`, `read-glossary`, and `read` return original Markdown source by default. `--json` returns concise retrieval JSON with the same information as MCP. `--debug` returns detailed JSON records for troubleshooting and takes precedence over `--json`. Write issues and failures to stderr so stdout contains only result data.
 
 Use `--cache-dir` to change the index storage location. `--help` provides commands, arguments, defaults, and examples. Full JSON records include `schemaVersion`; retrieval responses do not expose it.
 
@@ -175,10 +182,11 @@ CLI default text and concise JSON use the shared presentation layer. CLI `--json
 | Terms | Selection ID, name and file |
 | Section read | File and original content |
 | Batch reads | Kind, file, optional name and original content; failed selections retain errors |
+| `read-lines` | Saved source file and exact content |
 
 JSON retrieval results retain `complete` and actionable `issues` or error `candidates`. They omit schema/parser versions, root/cache paths, generations, parsing statistics, hashes, line ranges, normalized identifiers, and outgoing records. Selection IDs are exposed when needed for an actual read. Internal source-hash checks remain in force; callers requiring an explicit snapshot check can obtain hashes through the Node API or CLI `--debug`.
 
-The default text output leads with titles and term names. Notes show a title and file; terms show a name and file. Glossaries show their owning section title, file, and term count. Use titles or names for normal reads. Show glossary IDs in text only when no heading is available or several glossaries share the same heading path. Empty lists report that no matching items were found; an empty section outline remains empty.
+The default text output leads with titles and term names. Notes show a title and file; terms show a name and file. Glossaries show their owning section title, file, and term count. Use titles or names for normal reads. Show glossary IDs in text only when no heading is available or several glossaries share the same heading path. Empty structural lists report that no matching items were found; an empty section outline prints nothing.
 
 `notes` and `search` choose a document title from a string-valued frontmatter `title`, then the first nonempty section title, then the root-relative file path without its Markdown extension. Their text and retrieval JSON contain only files and titles; searching properties does not add those properties to the response.
 
@@ -243,7 +251,19 @@ Accept frontmatter `tags` as a string or an array of strings. Recognize `#tag` a
 
 `--where` accepts a JSON object of conditions. v1 searches top-level frontmatter properties. Strings, numbers, booleans, and null must match in both type and value. If a document property is an array, check whether it contains the single condition value. `--has-property` checks key existence, including keys with null values.
 
-Property keys are case-sensitive. Date or numeric ranges, substrings, nested property paths, OR conditions, and body full-text search are outside v1. Store JSON-representable property values. Report invalid YAML as a property diagnostic for the document, retaining the rest of the index when its body can still be parsed.
+Property keys are case-sensitive. Date or numeric ranges, property substrings, nested property paths, and OR conditions are outside v1. Use shell tools such as grep/rg for source substring searches. Store JSON-representable property values. Report invalid YAML as a property diagnostic for the document, retaining the rest of the index when its body can still be parsed.
+
+## Shell search and source reads
+
+String search is delegated to existing shell tools such as grep, rg, and sed. The CLI and MCP do not expose `match` / `match_text`. Keep Chroma focused on indexed metadata, structural selection and exact source extraction. Use observed shell-search line locations with line/section reads rather than inferring document positions.
+
+Run line reads through the same serialized, root-bound `IndexService`, but bypass index refresh, cache locks, configuration/bibliography handling and parsing. Read the validated selected file directly; do not persist bodies. Keep traversal/cache exclusions, UTF-8, 2 MiB, root, symlink and stable-during-read checks. Requests retain cancellation checks before reading.
+
+`read-lines <file> --start <line> [--end <line>]` / MCP `read_lines` takes `file`, `startLine`, optional `endLine` and `sourceHash`. Lines are positive integers up to 1,000,000; end must be at or after start. Default to 20 lines from start and clamp end at EOF. Reject a start past EOF. Return exact source with its original line endings. Concise JSON/MCP exposes only `file`, `content` and completeness; Node/debug additionally provides actual range and source hash. An optional hash rejects changed source. Reads should use line locations obtained through search rather than guessed document positions.
+
+`read-section --line <line>` / MCP `read_section` with `line` uses the indexed section whose own source range contains the observed line. This is an alternative to title/path/id/label, with exactly one selector required. Retain normal index refresh and source-hash validation. Lines in frontmatter or otherwise without an owning section return `notASection`, suggesting line/frontmatter reads.
+
+`read-frontmatter <file> [--source-hash <hash>]` / MCP `read_frontmatter` returns exact original YAML with delimiters and line endings; absent frontmatter returns empty content. It retains index refresh and saved-source checks. CLI text is raw YAML; concise JSON/MCP provides `file` and `content`, while Node/debug additionally provides hash and range. File-wide frontmatter/configuration diagnostics remain relevant.
 
 ## Link resolution and backlinks
 
@@ -320,7 +340,7 @@ A parent section extends to just before the next heading at the same or a higher
 
 Select a section with `read-section <file> --title <title>`. Match the exact, case-sensitive display title returned by the outline. If several sections have the same title, return `ambiguousSection` with candidate titles and full heading paths. Use `--heading-path '["Parent","Child"]'` to select one full path. Preserve individual title strings rather than interpreting separator characters within titles.
 
-If a full heading path matches multiple sections, include their IDs in the candidates and require an explicit ID selection. Do not select the first match automatically. `--id <id>` and `--label <label>` remain supported; exactly one of title, heading path, ID, or label is required. The shared Node API and MCP `read_section` accept the same selectors as `title`, `headingPath`, `id`, and `label`. If a label targets a figure, math block, or another non-heading item, return a section selection error identifying the target kind. Block extraction is a separate feature.
+If a full heading path matches multiple sections, include their IDs in the candidates and require an explicit ID selection. Do not select the first match automatically. `--id <id>` and `--label <label>` remain supported; exactly one of title, heading path, ID, label, or observed line is required. The shared Node API and MCP `read_section` accept the same selectors as `title`, `headingPath`, `id`, and `label`. If a label targets a figure, math block, or another non-heading item, return a section selection error identifying the target kind. Block extraction is a separate feature.
 
 By default, return source including the heading and child sections. With `--no-children`, stop before the first child heading. If the parent body is empty, return only its labels and heading. Preserve directive, callout, link, math, and code source without rendering or converting syntax.
 
@@ -498,7 +518,7 @@ The default storage location is `markdown-chroma` under the operating system's u
 
 Persist the schema version, parser and wrapper versions, root path, configuration fingerprint, per-file change metadata and content hashes, properties, tags, sections, tables, images, glossaries, terms, labels, and outgoing references. Do not store full bodies, ASTs, or image binaries. Derive backlinks from the stored records.
 
-Create the index on the first query if it does not exist. On every subsequent query, check the file list and changes to reflect additions, modifications, and deletions. Verify content hashes and reparse only documents that need it. Optional CLI watch and MCP background watchers reuse this refresh; queries retain their own refresh checks.
+Except for `read-lines`, create the index on the first query if it does not exist. On every subsequent structural query, check the file list and changes to reflect additions, modifications, and deletions. Verify content hashes and reparse only documents that need it. Optional CLI watch and MCP background watchers reuse this refresh; queries retain their own refresh checks.
 
 Rebuild affected records when parser, wrapper, or schema versions or parsing settings change. v1 checks every document's content hash on each query and reparses only changed documents, catching changes even when timestamps and sizes are unchanged. `index --rebuild` reparses all documents without reusing cached records.
 
@@ -510,7 +530,11 @@ Successful queries and empty search results exit with code 0. Invalid arguments,
 
 Default CLI errors and readable candidate lists go to stderr, leaving stdout for successful text or source. With `--json`, query errors have `complete: false` and an `error` containing `code`, `message`, and optional `candidates`. Batch read errors remain beside successful items. Explicit `--debug` includes full errors under `error` (or per-item errors in batch reads), with `schemaVersion` and optional `details`. All query failures also write a message to stderr.
 
-Partial JSON retrieval results include `issues` with file and message; full records use `diagnostics` with codes, source positions when available, and severity. Plain outlines and reads report these issues on stderr. Retain successful selections when a batch read is partial. Do not remove authored text merely because it contains an internal field name.
+Partial JSON retrieval results include one brief `issues` summary, with a file when the affected scope is a single document. Plain outlines and reads report the same summary on stderr. Full Node API records and CLI `--debug` retain every snapshot diagnostic, with codes, source positions when available, and severity. Retain successful selections when a batch read is partial. Do not remove authored text merely because it contains an internal field name.
+
+Retrieval completeness follows the requested scope. File queries exclude diagnostics from unrelated documents; section reads and explicit item selections also exclude located MyST syntax diagnostics outside their selected source ranges. Frontmatter, configuration, bibliography, and unlocated diagnostics for selected files remain relevant throughout the file. Global discovery, name-only term lookup, and backlinks retain snapshot-wide completeness because errors elsewhere may hide matches or incoming references. Summarize relevant diagnostics without repeating all parser messages. Per-item selection failures always keep `complete: false`.
+
+The Node API and `--debug` deliberately retain snapshot-wide completeness and diagnostics, even for a file query; their status and exit code can therefore differ from scoped retrieval output. `index` and watch refreshes are always snapshot-wide. Obtain detailed diagnostics with `index --debug` or the detailed query output.
 
 During project queries, report YAML or MyST syntax errors and read failures as document diagnostics. Set `complete: false` and exit with a nonzero code to indicate omissions. Limit each document, configuration, and bibliography file to 2 MiB; report oversized files as diagnostics. Unresolved references alone do not make results partial, so retain their status in a normal index. Use exit code 0 for successful queries, 1 for partial results or query failures, and 2 for invalid arguments. For external table declarations unsupported by the installed parser, preserve available declaration metadata as `referenceOnly` and include syntax diagnostics.
 

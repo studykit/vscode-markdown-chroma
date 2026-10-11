@@ -35,6 +35,22 @@ markdown-chroma backlinks guide.md --root ./notes
 
 Combined filters use AND. Tags include descendants, so `--tag project` also matches `#project/launch`; add `--exact-tag` for an exact match. Property searches accept JSON strings, numbers, booleans, and null, and can match a member of an array property.
 
+## Combine shell search with Chroma reads
+
+Use existing shell tools such as `grep`, `rg`, and `sed` to find source text. Chroma provides structural discovery and reads rather than a built-in string-search command.
+
+```sh
+rg -n -F 'cache' ./notes
+markdown-chroma read-lines guide.md --start 40 --end 50 --root ./notes
+markdown-chroma read-section guide.md --line 42 --root ./notes
+```
+
+The read examples assume the shell search found `notes/guide.md` near line 42. Use actual observed line locations. `read-lines` preserves original source and line endings; omit `--end` to read up to 20 lines from `--start`, clamped at EOF. A start past EOF is an error. `read-section --line` reads the deepest indexed section owning that line. YAML has no section and can be read with `read-lines` or `read-frontmatter`.
+
+Line reads access saved source directly without creating, locking, or refreshing the structural index. Section and metadata queries retain their normal refresh. Reads keep root, symlink, UTF-8, 2 MiB and traversal/cache exclusions. An optional `--source-hash` rejects changed source using a hash from a prior debug read.
+
+`read-lines --json` returns only `complete`, `file`, and `content`. Its debug output also includes the actual range and hash. Chroma uses saved files, so shell search and subsequent reads should operate on the same saved project root.
+
 ## Read a section
 
 List a document's sections first:
@@ -136,6 +152,8 @@ Queries also refresh saved-file snapshots, so watch is optional. Unsaved edits b
 | `--debug` | Detailed JSON records for troubleshooting, including hashes, source ranges, parsing statistics, and cache paths where applicable |
 
 `--debug` takes precedence if both options are supplied. Ordinary queries return one JSON result; watch emits one JSON object per update. Default errors and ambiguous choices go to stderr; JSON errors retain codes and candidates.
+
+Ordinary queries report one short summary when relevant content could not be fully indexed. File and section reads ignore unrelated parsing issues elsewhere in the project; global searches and backlinks remain project-wide. Use `markdown-chroma index --root ./notes --debug` for all diagnostic messages. Detailed output uses project-wide status, so its exit code may differ from a successful scoped read.
 
 ## Cache and limits
 

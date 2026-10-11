@@ -33,6 +33,7 @@ export class MarkdownIndex {
   private files = new Set<string>();
   private scanDiagnostics: Diagnostic[] = [];
   private normalizedFiles = new Map<string, string[]>();
+  private readonly cacheDirectory: string;
   private names = new Map<string, string[]>();
   stats = { parsed: 0, reused: 0, removed: 0 };
 
@@ -42,11 +43,20 @@ export class MarkdownIndex {
       if (!fs.statSync(this.root).isDirectory()) throw new Error('Not a directory.');
     } catch (error) { throw new IndexError('invalidRoot', `Cannot open root: ${errorMessage(error)}`); }
     this.cacheFile = path.join(path.resolve(cacheDirectory), hash(this.root).slice(7), 'index.json');
+    let ancestor = path.resolve(cacheDirectory); const missing: string[] = [];
+    for (;;) {
+      try { this.cacheDirectory = path.join(fs.realpathSync(ancestor), ...missing.reverse()); break; }
+      catch {
+        const parent = path.dirname(ancestor);
+        if (parent === ancestor) { this.cacheDirectory = path.resolve(cacheDirectory); break; }
+        missing.push(path.basename(ancestor)); ancestor = parent;
+      }
+    }
   }
   get complete() { return !this.data.diagnostics.length && !this.data.documents.some(d => d.diagnostics.length); }
   get diagnostics() { return [...this.data.diagnostics, ...this.data.documents.flatMap(d => d.diagnostics)]; }
 
-  private scan(directory: string, cacheDirectory = fs.realpathSync(path.dirname(this.cacheFile))): void {
+  private scan(directory: string, cacheDirectory = this.cacheDirectory): void {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(directory, { withFileTypes: true }); }
     catch (error) { this.scanDiagnostics.push({ code: 'directoryReadFailed', file: portable(path.relative(this.root, directory)), message: errorMessage(error), severity: 'error' }); return; }
@@ -60,8 +70,13 @@ export class MarkdownIndex {
   }
 
   private readFile(file: string): string {
+    if (!this.files.has(file)) throw new IndexError('fileNotFound', `File is not in the indexed root: ${file}`);
+    return this.readSourceFile(file);
+  }
+
+  private readSourceFile(file: string): string {
     const absolute = path.resolve(this.root, file);
-    if (!isWithin(this.root, absolute) || !this.files.has(file)) throw new IndexError('fileNotFound', `File is not in the indexed root: ${file}`);
+    if (!isWithin(this.root, absolute)) throw new IndexError('outsideRoot', `File is outside the root: ${file}`);
     let handle: number | undefined;
     try {
       if (fs.realpathSync(absolute) !== absolute) throw new IndexError('outsideRoot', `Symlink paths are excluded: ${file}`);
@@ -78,6 +93,9 @@ export class MarkdownIndex {
       const content = buffer.subarray(0, size);
       if (!isUtf8(content)) throw new IndexError('invalidEncoding', `File is not valid UTF-8: ${file}`);
       return content.toString('utf8');
+    } catch (error) {
+      if (error instanceof IndexError) throw error;
+      throw new IndexError((error as NodeJS.ErrnoException).code === 'ENOENT' ? 'fileNotFound' : 'fileReadFailed', `Cannot read saved file: ${file}`);
     } finally { if (handle !== undefined) fs.closeSync(handle); }
   }
 
@@ -322,10 +340,40 @@ export class MarkdownIndex {
     if (implicit.length > 1) throw new IndexError('ambiguousSection', 'Multiple sections have this implicit label.', implicit);
     throw new IndexError(targets.length ? 'notASection' : 'sectionNotFound', targets.length ? 'This label selects a content block.' : 'Section was not found.', targets.length ? targets : undefined);
   }
+  sectionAtLine(document: DocumentIndex, line: number): Section {
+    const section = document.sections.find(section => section.startLine <= line && section.ownEndLine >= line);
+    if (!section) throw new IndexError('notASection', 'This line has no indexed section. Use read-lines for source or read-frontmatter for YAML.');
+    return section;
+  }
   read(item: ContentItem | (Section & { file: string; sourceHash: string }), sourceHash?: string, endLine = item.endLine): string {
+    const source = this.savedSource(item, sourceHash);
+    return extract(source, item.startLine, endLine);
+  }
+  private savedSource(item: { file: string; sourceHash: string }, sourceHash?: string): string {
     const source = this.readFile(item.file);
     if (hash(source) !== item.sourceHash || (sourceHash && sourceHash !== item.sourceHash)) throw new IndexError('documentChanged', `Document changed; list its items again: ${item.file}`);
-    return extract(source, item.startLine, endLine);
+    return source;
+  }
+  readFrontmatter(document: DocumentIndex, sourceHash?: string) {
+    const source = this.savedSource(document, sourceHash), endLine = parseFrontmatter(source)?.endLine ?? 0;
+    return { startLine: 1, endLine, content: endLine ? extract(source, 1, endLine) : '' };
+  }
+  private sourcePath(file: string): string {
+    if (path.isAbsolute(file) || /[\0\\]/.test(file)) throw new IndexError('invalidFile', 'File arguments must be root-relative paths.');
+    file = path.posix.normalize(file);
+    if (file === '..' || file.startsWith('../')) throw new IndexError('outsideRoot', 'File is outside the root.');
+    if (!/\.(?:md|markdown)$/i.test(file) || isExcludedIndexPath(this.root, path.resolve(this.root, file), this.cacheDirectory))
+      throw new IndexError('fileNotFound', `Markdown file is excluded from the root: ${file}`);
+    return file;
+  }
+  readLines(args: { file: string; startLine: number; endLine?: number; sourceHash?: string }) {
+    const file = this.sourcePath(args.file), source = this.readSourceFile(file);
+    const sourceHash = hash(source);
+    if (args.sourceHash && args.sourceHash !== sourceHash) throw new IndexError('documentChanged', `Document changed; search again: ${file}`);
+    const lines = source.split('\n').length - Number(source.endsWith('\n'));
+    if (args.startLine > lines) throw new IndexError('lineNotFound', `Start line is past the end of the file: ${file}`);
+    const endLine = Math.min(args.endLine ?? args.startLine + 19, lines);
+    return { file, startLine: args.startLine, endLine, sourceHash, content: extract(source, args.startLine, endLine) };
   }
   backlinks(document: DocumentIndex, termId?: string) {
     const term = termId ? document.terms.find(t => t.localId === termId || t.id === termId) : undefined;

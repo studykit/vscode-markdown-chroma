@@ -1,7 +1,7 @@
 import { IndexService, errorRecord } from './query';
 import { IndexError } from './types';
 import { startIndexWatch } from './watch';
-import { formatCliResult, presentResult, presentError } from './presentation';
+import { formatCliResult, presentResult, presentError, retrievalStatus } from './presentation';
 
 export async function runWatch(argv: string[]): Promise<void> {
   const report = (error: unknown) => {
@@ -35,9 +35,8 @@ export async function runWatch(argv: string[]): Promise<void> {
       onRefresh: result => {
         process.stdout.write(values.has('debug') || values.has('json')
           ? JSON.stringify({ event: 'indexed', ...(values.has('debug') ? result : presentResult(result)) }) + '\n' : formatCliResult(result));
-        for (const issue of result.diagnostics ?? []) process.stderr.write(values.has('debug')
-          ? `${issue.file ?? '.'}${issue.line ? ':' + issue.line : ''}: ${issue.code}: ${issue.message}\n`
-          : `${issue.file ?? '.'}: ${issue.message}\n`);
+        if (values.has('debug')) for (const issue of result.diagnostics ?? []) process.stderr.write(`${issue.file ?? '.'}${issue.line ? ':' + issue.line : ''}: ${issue.code}: ${issue.message}\n`);
+        else for (const issue of retrievalStatus(result).issues) process.stderr.write(`${issue.file ? issue.file + ': ' : ''}${issue.message}\n`);
       },
     });
     const close = () => { void handle.close().catch(report); };

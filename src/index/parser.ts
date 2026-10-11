@@ -29,6 +29,13 @@ export const hash = (value: string | Buffer) => `sha256:${createHash('sha256').u
 export const termIdentifier = (name: string) => `term-${normalizeLabel(name)?.identifier ?? ''}`;
 const labelIdentifier = (name: string) => normalizeLabel(name)?.identifier ?? name;
 function all(node: Node, type: string): Node[] { return [...(node.type === type ? [node] : []), ...(node.children?.flatMap(child => all(child, type)) ?? [])]; }
+/** MyST +++ blocks contain document-level headings; directive and quote headings remain local. */
+function* documentNodes(node: Node): Generator<Node> {
+  for (const child of node.children ?? []) {
+    yield child;
+    if (child.type === 'block') yield* documentNodes(child);
+  }
+}
 function range(node: Node, fallback = { startLine: 1, endLine: 1 }) {
   return { startLine: node.position?.start.line ?? fallback.startLine, endLine: Math.max(node.position?.start.line ?? fallback.startLine, node.position?.end.line ?? fallback.endLine) };
 }
@@ -140,7 +147,7 @@ export function parseIndex(file: string, source: string, settings: Record<string
   document.diagnostics = document.diagnostics.filter((d, i, a) => a.findIndex(v => v.code === d.code && v.line === d.line && v.message === d.message) === i);
   const slugger = new GithubSlugger(); slugger.slug('preamble');
   let pending: Node[] = [];
-  for (const node of raw.children ?? []) {
+  for (const node of documentNodes(raw)) {
     if (node.type === 'mystTarget') { pending.push(node); continue; }
     if (node.type === 'heading') {
       const title = text(node);

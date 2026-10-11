@@ -27,11 +27,17 @@ export async function run(): Promise<void> {
     cwd: definition.cwd?.fsPath, env: definition.env as Record<string, string>, stderr: 'pipe' });
   try {
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 13);
+    assert.equal((await client.listTools()).tools.length, 15);
     const result = await client.callTool({ name: 'list_sections', arguments: { file: 'Showcase.md' } });
     const data = result.structuredContent as { file: string; sections: unknown[] };
     assert.equal(data.file, 'Showcase.md');
     assert.ok(data.sections?.length);
+    assert.ok(!(await client.listTools()).tools.some(tool => tool.name === 'match_text'));
+    const source = await fs.readFile(path.join(root, 'Showcase.md'), 'utf8');
+    const line = source.split('\n').findIndex(text => text.includes('Markdown Chroma')) + 1;
+    assert.ok(line > 0);
+    const read = (await client.callTool({ name: 'read_section', arguments: { file: 'Showcase.md', line } })).structuredContent as any;
+    assert.match(read.content, /Markdown Chroma/);
   } finally { await client.close(); }
   const configuration = vscode.workspace.getConfiguration('markdownChroma.mcp', vscode.workspace.workspaceFolders![0].uri);
   const initialEnabled = configuration.inspect('enabled')?.workspaceValue;
@@ -53,7 +59,7 @@ export async function run(): Promise<void> {
     await configuration.update('root', initialRoot, vscode.ConfigurationTarget.Workspace);
     listener.dispose(); tokenSource.dispose();
   }
-  console.log('PASS: native MCP provider launches bundled stdio server with host runtime, exposes 13 tools and enforces workspace settings');
+  console.log('PASS: native MCP provider launches bundled stdio server with host runtime, exposes 15 tools, reads observed source lines and enforces workspace settings');
   const showcase = await vscode.workspace.openTextDocument(path.join(root, 'Showcase.md'));
   await vscode.window.showTextDocument(showcase);
   await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');

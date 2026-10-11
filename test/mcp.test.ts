@@ -31,6 +31,7 @@ test('shared queries preserve CLI results, validate selectors and recover after 
   try {
     const queries: [IndexQuery, string[]][] = [
       [{ command: 'search', arguments: { tags: ['project'], where: { status: 'draft' } } }, ['search', '--tag', 'project', '--where', '{"status":"draft"}']],
+      [{ command: 'read-frontmatter', arguments: { file: 'guide.md' } }, ['read-frontmatter', 'guide.md']],
       [{ command: 'read-section', arguments: { file: 'guide.md', label: 'setup', includeChildren: false } }, ['read-section', 'guide.md', '--label', 'setup', '--no-children']],
       [{ command: 'read-section', arguments: { file: 'guide.md', title: 'Setup', includeChildren: false } }, ['read-section', 'guide.md', '--title', 'Setup', '--no-children']],
       [{ command: 'read-section', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }, ['read-section', 'guide.md', '--heading-path', '["Setup","Child"]']],
@@ -56,7 +57,7 @@ test('shared queries preserve CLI results, validate selectors and recover after 
   } finally { await f.cleanup(); }
 });
 
-test('stdio MCP discovers and executes all 13 tools with API parity, partial reads and fresh snapshots', { timeout: 20000 }, async () => {
+test('stdio MCP discovers and executes all 15 tools with API parity, partial reads and fresh snapshots', { timeout: 20000 }, async () => {
   const f = await fixture();
   const client = new Client({ name: 'chroma-test', version: '1.0.0' });
   const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve('dist/mcp.cjs'), '--root', f.root, '--cache-dir', f.cache], stderr: 'pipe' });
@@ -65,6 +66,7 @@ test('stdio MCP discovers and executes all 13 tools with API parity, partial rea
     await client.connect(transport);
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map(tool => tool.name).sort(), mcpTools.map(([name]) => name).sort());
+    assert.ok(!tools.some(tool => tool.name === 'match_text'));
     assert.ok(tools.every(tool => tool.annotations?.readOnlyHint && tool.inputSchema.additionalProperties === false));
     const call = async (name: string, args: Record<string, unknown> = {}) => {
       const result = await client.callTool({ name, arguments: args });
@@ -84,6 +86,9 @@ test('stdio MCP discovers and executes all 13 tools with API parity, partial rea
     const queries: [string, IndexQuery][] = [
       ['list_notes', { command: 'notes', arguments: {} }],
       ['search_notes', { command: 'search', arguments: { tags: ['project'], where: { status: 'draft' } } }],
+      ['read_lines', { command: 'read-lines', arguments: { file: 'guide.md', startLine: 1, endLine: 3 } }],
+      ['read_section', { command: 'read-section', arguments: { file: 'guide.md', line: 8 } }],
+      ['read_frontmatter', { command: 'read-frontmatter', arguments: { file: 'guide.md' } }],
       ['get_backlinks', { command: 'backlinks', arguments: { file: 'guide.md' } }],
       ['read_section', { command: 'read-section', arguments: { file: 'guide.md', label: 'setup', includeChildren: false } }],
       ['read_section', { command: 'read-section', arguments: { file: 'guide.md', title: 'Setup', includeChildren: false } }],
@@ -98,7 +103,7 @@ test('stdio MCP discovers and executes all 13 tools with API parity, partial rea
     ];
     for (const [name, query] of queries) {
       const result = await call(name, query.arguments);
-      assert.deepEqual(result.data, presentResult(await f.service.execute(query)));
+      assert.deepEqual(result.data, presentResult(await f.service.execute(query), query));
       assert.equal(!!result.isError, !result.data.complete);
     }
     const traversal = await call('list_sections', { file: '../outside.md' });
@@ -119,6 +124,13 @@ test('stdio MCP discovers and executes all 13 tools with API parity, partial rea
     assert.match(fresh.data.content, /Changed\./);
     const parallel = await Promise.all([call('list_terms'), call('list_glossaries'), call('list_notes')]);
     assert.ok(parallel.every(result => result.data.complete));
+    await fs.writeFile(path.join(f.root, 'broken.md'), '---\na: 1\na: 2\n---\n# Broken\n');
+    const scoped = await call('list_sections', { file: 'guide.md' });
+    assert.equal(scoped.data.complete, true); assert.equal(scoped.isError, undefined); assert.equal(scoped.data.issues, undefined);
+    const global = await call('list_notes');
+    assert.equal(global.isError, true); assert.equal(global.data.issues.length, 1);
+    const local = await call('list_sections', { file: 'broken.md' });
+    assert.equal(local.isError, true); assert.equal(local.data.issues[0].file, 'broken.md');
     assert.doesNotMatch(stderr, /internalError:|invalidRoot:|invalidArguments:/);
   } finally { await client.close(); await f.cleanup(); }
 });

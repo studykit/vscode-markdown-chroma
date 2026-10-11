@@ -3,6 +3,8 @@ import { promisify } from 'node:util';
 import { build, context } from 'esbuild';
 import { cp, copyFile, mkdir, readdir, rm, readFile, writeFile, chmod } from 'node:fs/promises';
 
+// Removed source modules must not leave stale public declarations in npm packages.
+await rm('dist/types', { recursive: true, force: true });
 await promisify(execFile)(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.api.json']);
 
 await mkdir('dist/test', { recursive: true });

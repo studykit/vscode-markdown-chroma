@@ -47,13 +47,15 @@ test('HTTP URL discovers the same tools and reads fresh root-bound content acros
     const term = (await call(clients[0], 'list_terms')).terms[0];
     const queries: [string, IndexQuery][] = [
       ['list_notes', { command: 'notes', arguments: {} }],
+      ['read_lines', { command: 'read-lines', arguments: { file: 'guide.md', startLine: 1, endLine: 3 } }],
+      ['read_frontmatter', { command: 'read-frontmatter', arguments: { file: 'guide.md' } }],
       ['list_glossaries', { command: 'glossaries', arguments: {} }],
       ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', title: 'Child' } }],
       ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }],
       ['read_terms', { command: 'read-term', arguments: { ids: [term.id] } }],
       ['read_items', { command: 'read', arguments: { ids: [term.id, 'missing'] } }],
     ];
-    for (const [name, query] of queries) assert.deepEqual(await call(clients[0], name, query.arguments), presentResult(await f.service.execute(query)));
+    for (const [name, query] of queries) assert.deepEqual(await call(clients[0], name, query.arguments), presentResult(await f.service.execute(query), query));
     const escaped = await call(clients[0], 'list_sections', { file: '../outside.md' });
     assert.equal(escaped.error.code, 'outsideRoot');
     const changedRoot = await clients[0].callTool({ name: 'list_notes', arguments: { root: f.directory } });
@@ -65,6 +67,12 @@ test('HTTP URL discovers the same tools and reads fresh root-bound content acros
     assert.match(current.content, /Updated/);
     const concurrent = await Promise.all(clients.flatMap(client => Array.from({ length: 3 }, () => call(client, 'list_notes'))));
     assert.ok(concurrent.every(result => result.complete && result.notes[0].file === 'guide.md' && !('root' in result)));
+    await fs.writeFile(path.join(f.root, 'broken.md'), '---\na: 1\na: 2\n---\n# Broken\n');
+    assert.equal((await call(clients[0], 'list_sections', { file: 'guide.md' })).complete, true);
+    const global = await call(clients[1], 'list_notes');
+    assert.equal(global.complete, false); assert.equal(global.issues.length, 1);
+    const scoped = await call(clients[0], 'read_section', { file: 'guide.md', title: 'Setup' });
+    assert.equal(scoped.complete, true); assert.equal(scoped.issues, undefined);
     assert.deepEqual(errors, []);
   } finally { await Promise.all(clients.map(client => client.close())); await handle.close(); await f.cleanup(); }
 });
@@ -93,7 +101,7 @@ test('HTTP validates Host, Origin, bearer token, endpoint, methods and request s
     const client = new Client({ name: 'authorized', version: '1' });
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(handle.url), { requestInit: { headers: authorized } }));
-      assert.equal((await client.listTools()).tools.length, 13);
+      assert.equal((await client.listTools()).tools.length, 15);
     } finally { await client.close(); }
   } finally { await handle.close(); await f.cleanup(); }
 });

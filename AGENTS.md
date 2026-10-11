@@ -76,7 +76,7 @@ Choose verification according to the change:
 | Preview document lookup, aliases, and file access | `src/vault.ts` |
 | MyST rendering, references, and optional configuration | `src/myst.ts`, `src/references.ts`, `src/myst-config.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
-| Persistent indexing, parsing, records, shared queries, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
+| Persistent indexing, parsing, source reads, records, shared queries, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
 | CLI entry point and argument handling | `src/cli.ts`, `src/index/cli.ts` |
 | Public Node API exports | `src/index/index.ts` |
 | MCP entry point, transport selection, stdio / HTTP lifecycle, and tools | `src/mcp.ts`, `src/mcp/cli.ts`, `src/mcp/stdio.ts`, `src/mcp/http.ts`, `src/mcp/server.ts` |
@@ -106,11 +106,13 @@ The shared preview settings are `markdownChroma.preview.root` and `markdownChrom
 
 - Keep CLI and MCP queries on the same root-bound `IndexService`. Export the shared API and TypeScript declarations through `markdown-chroma/index`.
 - The index uses an explicit root, defaults to the current directory, and does not depend on `.obsidian` configuration or indexes. Do not add special handling for Obsidian `%%…%%` comments or block IDs without an explicit scope change; preview support differs from index support.
-- List section titles before reading sections; do not guess source line ranges. CLI `sections` defaults to a title outline and MCP returns a title tree. Read by exact title or full heading path; preserve ID/label selection, explicit ambiguity errors, exact source ranges, and source-hash checks for stale reads.
-- Keep default CLI output as readable text, with titles and term names as the primary choices. CLI `--json` and MCP use the shared concise retrieval presentation. Do not expose index internals such as cache paths, versions, hashes, line ranges, parser identifiers, or outgoing records in these outputs. Preserve actionable candidates, original content, and partial-result issues. Explicit CLI `--debug` and the Node API retain full records; `--debug` takes precedence over `--json`.
+- List section titles before title-based reads, or use observed grep/rg line locations for source/section reads; do not guess document positions. CLI `sections` defaults to a title outline and MCP returns a title tree. Read by exact title or full heading path; preserve ID/label selection, explicit ambiguity errors, exact source ranges, and source-hash checks for stale reads.
+- Keep default CLI output as readable text, with titles and term names as the primary choices. CLI `--json` and MCP use the shared concise retrieval presentation. Do not expose index internals such as cache paths, versions, hashes, parser ranges/identifiers, or outgoing records in these outputs. Observed external search line numbers may be used for source/section reads. Preserve actionable candidates, original content, and partial-result issues. Explicit CLI `--debug` and the Node API retain full records; `--debug` takes precedence over `--json`.
+- Summarize retrieval diagnostics once and scope file/section/explicit-item reads to the requested content. Keep file-wide configuration/frontmatter failures relevant, global discovery and backlinks conservative, and per-item failures partial. Full Node/debug results retain snapshot-wide diagnostics and completeness. Traverse MyST `+++` document blocks for document headings while excluding headings local to directives, quotes, and code; bump the wrapper parser version when persisted parsing behavior changes.
 - Read whole glossaries by file and owning section title or heading path. Preserve listed IDs for unlabeled or indistinguishable glossaries and batch selections. Never select the first match when a title or path is ambiguous.
-- Refresh saved-file snapshots on queries, reuse unchanged parsed records, and preserve cache locking, cancellation-aware waits, and serialized requests. Do not store full document bodies or ASTs in the persistent cache.
+- Refresh saved-file snapshots on structural queries (line reads bypass parsing/cache refresh), reuse unchanged parsed records, and preserve cache locking, cancellation-aware waits, and serialized requests. Do not store full document bodies or ASTs in the persistent cache.
 - Preserve typed AND search filters, deterministic term selection, request order, deduplication of identical selections, and successful items in partial reads. Report `complete: false` with diagnostics or per-item errors when results are partial.
+- Use external grep/rg/sed for source string search; do not expose a duplicate `match` command or MCP `match_text` tool. `read-lines` / `read_lines` reads selected saved source through the same serialized `IndexService` without index refresh/cache locks. Preserve root, UTF-8, size, symlink, cache/traversal exclusions and stable-read checks. `read-section --line` / MCP `line` selects the section owning an observed external-search line and retains structural refresh/hash checks.
 - Keep MCP stdout protocol-only and launch errors on stderr. Requests cannot change the server root. SDK validation errors may have text content without `structuredContent`; handle both response forms.
 - Streamable HTTP uses the same root-bound service through the SDK's public handler. Bind loopback by default; validate Host and Origin headers, require the environment-supplied Bearer token for non-loopback access, and keep tokens out of URLs and logs. Retain stdio as the default and the VS Code provider transport.
 - CLI watch and MCP background watching share `startIndexWatch`. Debounce events, retain periodic full hash scans and query-time refresh, skip the same excluded trees and cache paths as traversal, reattach replaced directories, and cancel lock waits and release watches on shutdown.
@@ -118,6 +120,7 @@ The shared preview settings are `markdownChroma.preview.root` and `markdownChrom
 
 ## Developer references
 
+- [MyST retrieval benchmark and token analysis](docs/benchmarks/MYSTMD-RETRIEVAL.md)
 - [VS Code Markdown Extension API](https://code.visualstudio.com/api/extension-guides/markdown-extension)
 - [VS Code MCP extension API](https://code.visualstudio.com/api/extension-guides/ai/mcp)
 - [Official TypeScript MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)

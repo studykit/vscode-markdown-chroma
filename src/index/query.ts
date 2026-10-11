@@ -18,8 +18,11 @@ export const querySchemas = {
   backlinks: z.strictObject({ file, term: text.optional() }),
   sections: z.strictObject({ file }),
   'read-section': z.strictObject({ file, title: text.optional(), headingPath: z.array(text).min(1).optional(),
-    id: text.optional(), label: text.optional(), includeChildren: z.boolean().optional(), sourceHash: text.optional() })
-    .refine(value => [value.title, value.headingPath, value.id, value.label].filter(value => value !== undefined).length === 1, 'Specify exactly one title, headingPath, id or label'),
+    id: text.optional(), label: text.optional(), line: z.number().int().min(1).max(1000000).optional(), includeChildren: z.boolean().optional(), sourceHash: text.optional() })
+    .refine(value => [value.title, value.headingPath, value.id, value.label, value.line].filter(value => value !== undefined).length === 1, 'Specify exactly one title, headingPath, id, label or line'),
+  'read-lines': z.strictObject({ file, startLine: z.number().int().min(1).max(1000000), endLine: z.number().int().min(1).max(1000000).optional(), sourceHash: text.optional() })
+    .refine(value => value.endLine === undefined || value.endLine >= value.startLine, 'endLine must be at or after startLine'),
+  'read-frontmatter': z.strictObject({ file, sourceHash: text.optional() }),
   tables: sectionScope,
   images: sectionScope,
   glossaries: z.strictObject(scope),
@@ -58,7 +61,8 @@ export class IndexService {
     const validated = { command: query.command, arguments: parsed.data } as IndexQuery;
     const operation = this.pending.then(async () => {
       options.signal?.throwIfAborted();
-      await this.index.refresh(validated.command === 'index' && !!validated.arguments.rebuild, options.signal);
+      if (validated.command !== 'read-lines')
+        await this.index.refresh(validated.command === 'index' && !!validated.arguments.rebuild, options.signal);
       options.signal?.throwIfAborted();
       return executeQuery(this.index, validated);
     });
@@ -68,6 +72,7 @@ export class IndexService {
 }
 
 function executeQuery(index: MarkdownIndex, query: IndexQuery) {
+  if (query.command === 'read-lines') return { schemaVersion: SCHEMA_VERSION, complete: true, diagnostics: [] as Diagnostic[], ...index.readLines(query.arguments) };
   const envelope = <T extends object>(result: T, complete = index.complete): T & { schemaVersion: number; complete: boolean; diagnostics?: Diagnostic[] } =>
     ({ schemaVersion: SCHEMA_VERSION, complete, ...result, ...(index.diagnostics.length ? { diagnostics: index.diagnostics } : {}) });
   const documents = index.data.documents;
@@ -94,8 +99,13 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
       const document = index.document(query.arguments.file);
       return envelope({ file: document.file, sourceHash: document.sourceHash, sections: document.sections });
     }
+    case 'read-frontmatter': {
+      const document = index.document(query.arguments.file);
+      return envelope({ file: document.file, sourceHash: document.sourceHash, ...index.readFrontmatter(document, query.arguments.sourceHash) });
+    }
     case 'read-section': {
-      const args = query.arguments, document = index.document(args.file), section = index.section(document, args.id, args.label, args.title, args.headingPath);
+      const args = query.arguments, document = index.document(args.file), section = args.line === undefined
+        ? index.section(document, args.id, args.label, args.title, args.headingPath) : index.sectionAtLine(document, args.line);
       const includeChildren = args.includeChildren !== false;
       const endLine = includeChildren ? section.endLine : section.ownEndLine;
       const content = index.read({ ...section, file: document.file, sourceHash: document.sourceHash }, args.sourceHash, endLine);

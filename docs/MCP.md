@@ -1,6 +1,6 @@
 # Markdown Chroma MCP server
 
-Give an MCP client access to a folder of saved Markdown/MyST files. The server provides the same search and retrieval features as the [CLI](CLI.md), through **13 tools**, with stdio or Streamable HTTP connections.
+Give an MCP client access to a folder of saved Markdown/MyST files. The server provides the same search and retrieval features as the [CLI](CLI.md), through **15 tools**, with stdio or Streamable HTTP connections.
 
 [Back to the overview](../README.md) · [CLI guide](CLI.md) · [Detailed index specification](CLI-INDEX-SPEC.md)
 
@@ -117,7 +117,7 @@ The root must be an existing directory and stays fixed for the lifetime of the p
 
 ## Automatic indexing
 
-Both stdio and HTTP watch saved files by default. Events are grouped over 300 ms, then the existing refresh checks the whole file list and hashes and reparses only changed documents. A full scan every 30 seconds covers missed events and replaced directories. Pass `--no-watch` to disable background watching; queries still refresh saved-file snapshots.
+Both stdio and HTTP watch saved files by default. Events are grouped over 300 ms, then the existing refresh checks the whole file list and hashes and reparses only changed documents. A full scan every 30 seconds covers missed events and replaced directories. Pass `--no-watch` to disable background watching; structural queries still refresh saved-file snapshots; line reads access saved source directly.
 
 Watch covers Markdown, MyST configuration, bibliography, and attachment changes. Hidden paths, `node_modules`, `_build`, symlinks, and the root's cache directory are excluded. SIGINT/SIGTERM stops both watcher and transport. The [CLI watch command](CLI.md#keep-the-index-up-to-date) uses the same core and can run independently.
 
@@ -132,7 +132,9 @@ File arguments are exact paths relative to the server root. Optional arguments m
 | `search_notes` | `tags`, `exactTag`, `where`, `hasProperty` | AND search; at least one tag/property filter is required |
 | `get_backlinks` | **`file`**, `term` | Incoming references to a document or term |
 | `list_sections` | **`file`** | A tree of section titles |
-| `read_section` | **`file`**, **one of `title`, `headingPath`, `id`, or `label`**, `includeChildren`, `sourceHash` | Original Markdown, including child sections by default |
+| `read_section` | **`file`**, **one of `title`, `headingPath`, `id`, `label`, or `line`**, `includeChildren`, `sourceHash` | Original Markdown, including child sections by default |
+| `read_lines` | **`file`**, **`startLine`**, `endLine`, `sourceHash` | Exact source range; default 20 lines, clamped at EOF; no index refresh |
+| `read_frontmatter` | **`file`**, `sourceHash` | Original YAML including delimiters; empty content when absent |
 | `list_tables` | `file`, `section` | Captions, headers, and owning heading paths |
 | `list_images` | `file`, `section` | Sources, alt text, captions, and owning heading paths |
 | `list_glossaries` | `file` | Glossary choices and term counts |
@@ -143,11 +145,17 @@ File arguments are exact paths relative to the server root. Optional arguments m
 
 A `section` filter also requires `file`. `where` is a JSON object with string, number, boolean, or null values; array properties match members. Tags include descendants by default.
 
+Use external shell tools such as grep/rg for source string search. The server provides indexed metadata, structural selection and saved-source reads. Pass an observed file/line location to `read_lines({file,startLine,endLine})` for a small source range or `read_section({file,line})` for its owning section.
+
+Line reads default to 20 lines, clamp at EOF, preserve line endings, and reject starts past EOF. They access validated saved source directly without parsing or refreshing the index; malformed YAML/MyST does not prevent a raw line read. Root, cache/traversal exclusions, symlink, UTF-8 and size checks remain in force. Structural tools retain their normal index refresh and completeness behavior.
+
 List sections first, then read an exact, case-sensitive `title`. Duplicate titles return candidate full heading paths; pass one as `headingPath: ["Parent", "Child"]`. If the path is also duplicated, candidates include IDs for explicit selection. IDs and MyST labels remain supported. Read a glossary by its file and owning section title or path, or use listed IDs for batch selections and indistinguishable glossaries. Term reads use names or listed IDs. Do not infer source line ranges. A titleless `[preamble]` item can be read with `id: "preamble"`.
 
 ## Results and saved-file behavior
 
-Results contain retrieval information and `complete`. They omit cache paths, versions, hashes, source line ranges, and parser records. MCP returns the same concise result as `structuredContent` and JSON text `content`. Partial results use `complete: false` and `isError: true`, preserving successful items alongside `issues` or per-item errors. SDK input validation errors may have text content without `structuredContent`.
+Results contain retrieval information and `complete`. They omit cache paths, versions, hashes, parser ranges and records. Observed shell-search line numbers may be supplied to read tools. MCP returns the same concise result as `structuredContent` and JSON text `content`. Partial results use `complete: false` and `isError: true`, preserving successful items alongside `issues` or per-item errors. SDK input validation errors may have text content without `structuredContent`.
+
+`issues` contains one short summary of relevant problems. File queries and section or explicit-item reads exclude unrelated document or source-range syntax diagnostics. File-wide frontmatter/configuration problems remain relevant. Global discovery, name-only term lookup, and backlinks retain project-wide completeness, as parsing failures can hide matches. Per-item errors always make a batch partial. The Node API and CLI `--debug` retain all snapshot diagnostics and project-wide status.
 
 For example, `list_sections` returns:
 
@@ -165,7 +173,7 @@ Read a listed title with `read_section({"file":"guide.md","title":"macOS"})`. A 
 
 Ambiguous term names return `ambiguousTerm` with candidates; choose a file or a global ID. Batch selections preserve request order and deduplicate identical selections. Selecting a glossary and one of its terms returns both.
 
-Queries use saved files. They do not read unsaved editor contents. Requests and background refreshes are serialized on the same service; separate CLI/server processes share cache locks. Cancellation can stop a lock wait but does not interrupt synchronous parsing already in progress. Full scan cost grows with the root size; pagination is not provided.
+Queries use saved files. They do not read unsaved editor contents. Requests and background refreshes are serialized on the same service; structural queries in separate CLI/server processes share cache locks. Line reads do not acquire those locks. Cancellation can stop a lock wait but does not interrupt synchronous parsing already in progress. Structural refresh cost grows with the root size. Structural lists do not provide pagination.
 
 Read tools return original Markdown. Tables and images provide lists and locations, rather than separate raw-content reads or image binaries. See the [index specification](CLI-INDEX-SPEC.md) for other limits and diagnostics.
 

@@ -1,8 +1,43 @@
-import type { QueryResult, errorRecord } from './query';
+import { posix } from 'node:path';
+import type { IndexQuery, QueryResult, errorRecord } from './query';
 import type { Section } from './types';
 
 type ErrorRecord = ReturnType<typeof errorRecord>;
 export interface SectionOutline { title: string; id?: string; children?: SectionOutline[] }
+
+/** Full Node/debug results retain snapshot diagnostics; retrieval status follows the requested scope. */
+export function retrievalStatus(result: QueryResult, query?: IndexQuery) {
+  const all = result.diagnostics ?? [];
+  const files = new Map<string, { startLine: number; endLine: number }[] | undefined>();
+  if ('sections' in result) files.set(result.file, undefined);
+  else if ('content' in result) files.set(result.file, [{ startLine: result.startLine, endLine: result.endLine }]);
+  else if (query && 'file' in query.arguments && query.arguments.file && query.command !== 'backlinks') {
+    files.set(posix.normalize(query.arguments.file), undefined);
+  }
+  if ('items' in result && query && (('ids' in query.arguments && query.arguments.ids) || query.command === 'read-glossary'
+    || ('file' in query.arguments && query.arguments.file))) {
+    for (const item of result.items) if (item.status === 'ok') {
+      const ranges = files.get(item.file) ?? [];
+      ranges.push({ startLine: item.startLine, endLine: item.endLine }); files.set(item.file, ranges);
+    }
+  }
+  const diagnostics = files.size ? all.filter(issue => {
+    if (!issue.file) return true;
+    // Scan failures in containing directories can affect any requested file below them.
+    if (issue.code === 'directoryReadFailed') return [...files.keys()].some(file => !issue.file || file.startsWith(issue.file + '/'));
+    if (!files.has(issue.file)) return false;
+    const ranges = files.get(issue.file);
+    return !ranges || issue.code !== 'mystSyntax' || !issue.line || ranges.some(range => issue.line! >= range.startLine && issue.line! <= range.endLine);
+  }) : all;
+  const itemError = 'items' in result && result.items.some(item => item.status === 'error');
+  const complete = result.complete || (!!all.length && !diagnostics.length && !itemError);
+  const affected = [...new Set(diagnostics.map(issue => issue.file).filter(Boolean))];
+  const action = query?.command === 'read-lines' ? 'read' : 'indexed';
+  const issues: { file?: string; message: string }[] = !diagnostics.length ? [] : affected.length === 1
+    ? [{ file: affected[0]!, message: `Some content could not be fully ${action}. Results may be partial.` }]
+    : [{ message: `Some content could not be fully ${action}${affected.length ? ` in ${affected.length} ${affected.length === 1 ? 'file' : 'files'}` : ''}. Results may be partial.` }];
+  return { complete, diagnostics, issues };
+}
 
 /** Retrieval responses expose choices and content, rather than index records. */
 export function sectionOutline(sections: Section[]): SectionOutline[] {
@@ -91,7 +126,7 @@ export function formatCliError(error: ErrorRecord): string {
 const location = (item: { file: string; headingPath: string[] }) => ({ file: item.file,
   ...(item.headingPath.length ? { headingPath: item.headingPath } : { sectionId: 'preamble' }) });
 
-export function presentResult(result: QueryResult): Record<string, unknown> & { complete: boolean } {
+export function presentResult(result: QueryResult, query?: IndexQuery): Record<string, unknown> & { complete: boolean } {
   let data: Record<string, unknown>;
   if ('documentCount' in result) data = { documents: result.documentCount };
   else if ('notes' in result) data = { notes: result.notes.map(note => ({ file: note.file, title: note.title })) };
@@ -115,6 +150,6 @@ export function presentResult(result: QueryResult): Record<string, unknown> & { 
   else if ('terms' in result) data = { terms: result.terms.map(term => ({ id: term.id, name: term.name, file: term.file })) };
   else data = { items: result.items.map(item => item.status === 'error' ? { selector: item.selector, error: presentError(item.error) }
     : { kind: item.kind, file: item.file, ...(item.name ? { name: item.name } : {}), content: item.content }) };
-  return { complete: result.complete, ...data,
-    ...(result.diagnostics?.length ? { issues: result.diagnostics.map(issue => ({ ...(issue.file ? { file: issue.file } : {}), message: issue.message })) } : {}) };
+  const status = retrievalStatus(result, query);
+  return { complete: status.complete, ...data, ...(status.issues.length ? { issues: status.issues } : {}) };
 }

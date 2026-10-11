@@ -50,6 +50,25 @@ test('mixed tokenizer collects semantic content once and ignores code, math, com
   assert.equal(document.images.length, 1);
 });
 
+test('document sections cross MyST blocks with labels, exact CRLF ranges and content ownership', () => {
+  const source = ['# Guide', 'Intro.', '', '+++', '', '(later)=', '## Later', 'Later body.', '',
+    ':::{note}', '# Local heading', ':::', '', '+++ {"part":"abstract"}', '', '## Definitions', '',
+    ':::{glossary}', 'AST', ': Tree.', ':::', '', '| Name | Value |', '| - | - |', '| A | B |', '',
+    '![Diagram](diagram.png)', '', '> ## Quote heading', '', '```md', '# Code heading', '```', ''].join('\r\n');
+  const document = parseIndex('blocks.md', source);
+  assert.deepEqual(document.sections.map(s => s.title), ['Guide', 'Later', 'Definitions']);
+  assert.deepEqual(document.sections[1].labels, ['later']);
+  assert.deepEqual(document.sections[2].headingPath, ['Guide', 'Definitions']);
+  assert.equal(document.sections[1].startLine, 6);
+  assert.equal(document.sections[1].endLine, 15);
+  assert.equal(extract(source, document.sections[1].startLine, document.sections[1].endLine),
+    ['(later)=', '## Later', 'Later body.', '', ':::{note}', '# Local heading', ':::', '', '+++ {"part":"abstract"}', ''].join('\r\n') + '\r\n');
+  assert.ok(document.targets.some(target => target.label === 'later' && target.kind === 'section' && target.id === 'later'));
+  for (const item of [...document.glossaries, ...document.terms, ...document.tables, ...document.images])
+    assert.deepEqual(item.headingPath, ['Guide', 'Definitions']);
+  assert.equal(document.terms.length, 1); assert.equal(document.tables.length, 1); assert.equal(document.images.length, 1);
+});
+
 test('built CLI handles internationalized URLs without loading deprecated punycode', async t => {
   const source = '# <https://xn--maana-pta.com>\n\n![Remote](https://mañana.com/picture.png)\n';
   const f = await fixture({ 'urls.md': source }); t.after(f.cleanup);
@@ -361,7 +380,7 @@ test('excluded paths and symlinks cannot become indexed or readable; invalid doc
   assert.deepEqual(result.json().notes.map((n: any) => n.file), ['a.md', 'bad.md', 'large.md']);
   assert.ok(result.json().diagnostics.some((d: any) => d.file === 'large.md'));
   const partialOutline = await f.cli('sections', 'bad.md');
-  assert.equal(partialOutline.code, 1); assert.equal(partialOutline.stdout, 'Still parsed\n'); assert.match(partialOutline.stderr, /large.md/);
+  assert.equal(partialOutline.code, 1); assert.equal(partialOutline.stdout, 'Still parsed\n'); assert.match(partialOutline.stderr, /bad.md/); assert.doesNotMatch(partialOutline.stderr, /large.md/);
   assert.equal((await f.cli('sections', 'bad.md', '--debug')).json().sections[0].title, 'Still parsed');
   assert.equal((await f.cli('sections', 'link.md', '--debug')).json().error.code, 'fileNotFound');
 });
