@@ -91,4 +91,4 @@ Local files are supported; virtual workspaces and browser-based VS Code are not.
 
 Report a problem or suggest a feature in [GitHub Issues](https://github.com/studykit/vscode-markdown-chroma/issues). Include a small Markdown example and your VS Code version so the behavior can be reproduced.
 
-Developer setup, build instructions, and verification are in [AGENTS.md](https://github.com/studykit/vscode-markdown-chroma/blob/main/AGENTS.md). Released under the [MIT license](https://github.com/studykit/vscode-markdown-chroma/blob/main/LICENSE).
+Developer setup, build instructions, and verification are in the [development guide](https://github.com/studykit/vscode-markdown-chroma/blob/main/docs/DEVELOPMENT.md). Released under the [MIT license](https://github.com/studykit/vscode-markdown-chroma/blob/main/LICENSE).
