@@ -48,15 +48,22 @@ export async function verifyPreviewPlugins(extensionPath: string, root: string) 
         options: { suffix: { type: String, alias: ['ending'] } }, body: { type: 'myst' },
         run(data) { return [{ type: 'heading', depth: 2, identifier: 'generated-target', children: [{ type: 'text', value: data.arg }] },
           { type: 'paragraph', children: [{ type: 'text', value: value + data.options.suffix }] }, ...data.body]; }
-      }], roles: [{ name: 'generated-ref', body: { type: String }, run(data) { return [{ type: 'crossReference', identifier: 'generated-target', children: [{ type: 'text', value: data.body }] }]; } }]
+      }], roles: [{ name: 'generated-ref', alias: ['generated-reference'], body: { type: String }, run(data) { return [{ type: 'crossReference', identifier: 'generated-target', children: [{ type: 'text', value: data.body }] }]; } }]
     };`;
     await fs.writeFile(path.join(scratch, 'directives.mjs'), generated);
     await fs.writeFile(path.join(scratch, 'helper.mjs'), `export const value = 'Saved helper ';`);
-    const generatedPage = { ...virtual, getText: () => ':::{generated-alias} Generated title\n:ending: suffix\n\n**Body passed**\n:::\n\n{generated-ref}`Generated reference`\n\nOrdinary content.' };
+    const generatedSource = ':::{generated-alias} Generated title\n:ending: suffix\n\n**Body passed**\n:::\n\n{generated-reference}`Generated reference`\n\nOrdinary content.';
+    const generatedPage = { ...virtual, getText: () => generatedSource };
     let generatedHtml = await waitFor(html => html.includes('Saved helper suffix') && !html.includes('Loading MyST'), generatedPage);
     assert.match(generatedHtml, /<h2[^>]*>Generated title<\/h2>/);
     assert.match(generatedHtml, /<strong>Body passed<\/strong>/);
     assert.match(generatedHtml, /href="#generated-target">Generated reference<\/a>/);
+    assert.doesNotMatch(generatedHtml, /myst-error/);
+    const canonicalPage = { ...virtual, getText: () => generatedSource.replace('generated-alias', 'generated')
+      .replace(':ending:', ':suffix:').replace('generated-reference', 'generated-ref') };
+    const canonicalHtml = await waitFor(html => html.includes('Saved helper suffix') && !html.includes('Loading MyST'), canonicalPage);
+    assert.equal(canonicalHtml, generatedHtml);
+    console.log('PASS: custom directive, option and role aliases produce the same rendered HTML as their registered names');
     await fs.writeFile(path.join(scratch, 'helper.mjs'), `export const value = 'Changed helper ';`);
     generatedHtml = await waitFor(html => html.includes('Changed helper suffix') && !html.includes('Loading MyST'), generatedPage);
     assert.doesNotMatch(generatedHtml, /Saved helper/);

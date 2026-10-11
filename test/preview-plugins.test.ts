@@ -11,18 +11,18 @@ const plugin = `import { u } from 'unist-builder';
 import { mystParse } from 'myst-parser';
 import { defaultDirectives } from 'myst-directives';
 export default {
-  directives: [{ name: 'generated', alias: ['generated-alias'], arg: { type: String, required: true },
+  directives: [{ name: 'demo:generated', alias: ['demo:generated-alias'], arg: { type: String, required: true },
     options: { suffix: { type: String, alias: ['ending'] } }, body: { type: 'myst' },
     run(data) { return [u('heading', { depth: 2, identifier: 'generated-target' }, [u('text', data.arg)]),
       u('paragraph', [u('text', data.options.suffix ?? '')]), ...data.body,
       ...mystParse('**Bundled parser works**').children,
       u('paragraph', [u('text', defaultDirectives.find(d => d.name === 'code').name)])]; }
   }],
-  roles: [{ name: 'generated-ref', alias: ['generated-reference'], body: { type: String, required: true },
+  roles: [{ name: 'demo:generated-ref', alias: ['demo:generated-reference'], body: { type: String, required: true },
     run(data) { return [u('crossReference', { identifier: 'generated-target' }, [u('text', data.body)])]; }
   }]
 };`;
-const source = ':::{generated-alias} Generated heading\n:ending: Option passed\n\nBody with **formatting**.\n:::\n\n{generated-reference}`Read it`\n\nUnrelated paragraph.';
+const source = ':::{demo:generated-alias} Generated heading\n:ending: Option passed\n\nBody with **formatting**.\n:::\n\n{demo:generated-reference}`Read it`\n\nUnrelated paragraph.';
 
 async function renderReady(render: () => string) {
   const deadline = Date.now() + 6000;
@@ -42,7 +42,7 @@ test('opt-in and workspace trust gate all project plugin execution', async t => 
   await assert.rejects(fs.access(path.join(f.root, 'executed')));
 });
 
-test('generated headings, bodies, aliased options and roles use bundled imports and the existing renderer', async t => {
+test('custom directives and roles render identically by registered names and aliases, including options and parsed bodies', async t => {
   const f = await fixture(t, { 'Main.md': '', 'myst.yml': 'project:\n  plugins: [plugin.js]\n', 'plugin.js': plugin });
   const manager = new PreviewPluginManager(() => {}, path.join(__dirname, '../preview-plugin-worker.cjs')); t.after(() => manager.dispose());
   f.host.parseMystPlugins = (input, file, project) => manager.parse(input, file, f.root, project, true, true);
@@ -54,6 +54,9 @@ test('generated headings, bodies, aliased options and roles use bundled imports 
   assert.match(html, /href="#generated-target">Read it<\/a>/);
   assert.match(html, /Unrelated paragraph/);
   assert.doesNotMatch(html, /myst-error/);
+  const canonical = source.replace('demo:generated-alias', 'demo:generated')
+    .replace(':ending:', ':suffix:').replace('demo:generated-reference', 'demo:generated-ref');
+  assert.equal(await renderReady(() => f.render(canonical)), html);
   // A cached AST is cloned before mutable transforms/reference resolution.
   assert.equal(f.render(source), html);
 });
