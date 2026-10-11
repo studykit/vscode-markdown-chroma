@@ -6,14 +6,20 @@ Search a folder of Markdown files and read the sections, terms, and glossaries y
 
 ## Install
 
-Install Node.js 20 or later, then install the packaged npm archive:
+Install Node.js 20 or later, then install the public npm package:
 
 ```sh
-npm install -g ./markdown-chroma-0.1.0.tgz
+npm install -g markdown-chroma
 markdown-chroma --help
 ```
 
-This installs both `markdown-chroma` and `markdown-chroma-mcp`. For building from source, see [developer setup](../AGENTS.md).
+This installs both `markdown-chroma` and `markdown-chroma-mcp` from the same package. To run the CLI without a global installation:
+
+```sh
+npx --yes markdown-chroma@0.1.0 notes --root ./notes
+```
+
+Use a specific version in automated setups. You can also install a downloaded archive with `npm install -g ./markdown-chroma-0.1.0.tgz`. For building from source, see [developer setup](../AGENTS.md).
 
 ## Start with your notes folder
 

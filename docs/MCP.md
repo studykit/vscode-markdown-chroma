@@ -25,19 +25,27 @@ If a server is missing, check these settings and the **Markdown Chroma MCP** out
 
 ## Install a standalone server
 
-For clients outside the extension, install Node.js 20 or later and the packaged npm archive:
+For clients outside the extension, install Node.js 20 or later and the public npm package:
 
 ```sh
-npm install -g ./markdown-chroma-0.1.0.tgz
+npm install -g markdown-chroma
 markdown-chroma-mcp --help
 ```
 
-The archive installs both `markdown-chroma` and `markdown-chroma-mcp`. The following commands run the same server:
+The `markdown-chroma` package installs both `markdown-chroma` and `markdown-chroma-mcp`. The following commands run the same server:
 
 ```sh
 markdown-chroma-mcp --root /absolute/path/to/notes
 markdown-chroma mcp --root /absolute/path/to/notes
 ```
+
+You can also run it without a global installation:
+
+```sh
+npx --yes --package markdown-chroma@0.1.0 markdown-chroma-mcp --root /absolute/path/to/notes
+```
+
+Use a specific version in automated setups. `markdown-chroma-mcp` is an executable included in `markdown-chroma`, not a separate npm package. A downloaded archive can be installed with `npm install -g ./markdown-chroma-0.1.0.tgz`.
 
 For a build from source, use `node dist/mcp.cjs` with the same options. See [developer setup](../AGENTS.md).
 
@@ -65,6 +73,8 @@ In VS Code, run **MCP: Open User Configuration** and add this to the `servers` o
 ```
 
 Replace the root with your folder. If the client cannot find the executable, use its absolute installed path; on macOS/Linux, find it with `command -v markdown-chroma-mcp`. Other clients may use a different configuration format with the same command and arguments.
+
+For a client that launches through `npx`, use `"command": "npx"` and `"args": ["--yes", "--package", "markdown-chroma@0.1.0", "markdown-chroma-mcp", "--root", "/absolute/path/to/notes"]` instead.
 
 Run **MCP: List Servers**, select the server, and start it. If you use manual setup alongside the extension, set `markdownChroma.mcp.enabled` to `false` for that workspace folder to avoid two servers for the same project. See [VS Code's MCP configuration guide](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
 
@@ -228,6 +238,8 @@ For the shared API, supply the launch capability as the third constructor argume
 ## Shared Node API
 
 `markdown-chroma/index` exports the same `IndexService`, plus TypeScript declarations:
+
+Install it locally with `npm install markdown-chroma`. TypeScript Node applications also need `@types/node` in their development dependencies.
 
 ```js
 const { IndexService } = require('markdown-chroma/index');

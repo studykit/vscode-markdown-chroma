@@ -1,7 +1,7 @@
 {
   "name": "markdown-chroma",
   "displayName": "Markdown Chroma",
-  "description": "Render Obsidian and MyST syntax in VS Code's built-in Markdown preview, without a MyST project.",
+  "description": "Obsidian and MyST Markdown preview for VS Code, with saved-document CLI and MCP retrieval.",
   "version": "0.1.0",
   "publisher": "studykit",
   "icon": "media/icon.png",
@@ -14,6 +14,10 @@
     "url": "https://github.com/studykit/vscode-markdown-chroma/issues"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "engines": {
     "vscode": "^1.90.0",
     "node": ">=20"
@@ -29,7 +33,9 @@
     "callout",
     "myst",
     "mystmd",
-    "jupyter-book"
+    "jupyter-book",
+    "cli",
+    "mcp"
   ],
   "main": "./dist/extension.cjs",
   "bin": {
