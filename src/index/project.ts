@@ -283,6 +283,14 @@ export class MarkdownIndex {
           result = terms.length === 1 ? { status: 'found', file: terms[0].file, targetKind: 'term', targetId: terms[0].id, fragmentStatus: 'found' }
             : terms.length ? { status: 'ambiguous', candidates: terms.map(t => t.id) } : { status: 'missing' };
         } else if (reference.kind === 'ref') result = this.labelResolution(reference.target, document.file);
+        else if (reference.kind === 'link' && !reference.target && reference.fragment !== null) {
+          let fragment = reference.fragment;
+          try { fragment = decodeURIComponent(fragment); } catch { /* Preserve literal malformed escapes. */ }
+          const identifier = normalizeLabel(fragment)?.identifier;
+          const explicit = identifier && this.data.documents.some(d => d.targets.some(t => !t.implicit && t.identifier === identifier));
+          // Text-bearing MyST links can select project labels. Ordinary heading fragments stay local.
+          result = explicit ? this.labelResolution(identifier, document.file) : this.resolveFile('', document.file);
+        }
         else if (reference.kind === 'citation') {
           result = document.bibliographyKeys.includes(key(reference.target)) ? { status: 'citation' } : this.labelResolution(reference.target, document.file);
         } else if (reference.kind === 'embed' && reference.syntax === 'myst' && (!reference.target || (!reference.target.includes('/') && !reference.target.includes('.') && !reference.target.includes(':') && !reference.fragment))) {
@@ -345,7 +353,7 @@ export class MarkdownIndex {
     if (!section) throw new IndexError('notASection', 'This line has no indexed section. Use read-lines for source or read-frontmatter for YAML.');
     return section;
   }
-  read(item: ContentItem | (Section & { file: string; sourceHash: string }), sourceHash?: string, endLine = item.endLine): string {
+  read(item: Pick<ContentItem, 'file' | 'sourceHash' | 'startLine' | 'endLine'>, sourceHash?: string, endLine = item.endLine): string {
     const source = this.savedSource(item, sourceHash);
     return extract(source, item.startLine, endLine);
   }

@@ -25,11 +25,14 @@ Usage: markdown-chroma <command> [file or term names] [options]
   read-glossary <file>       Read a glossary by its owning --title or --heading-path
   read-glossary --id <id>... Read selected whole glossaries by global IDs
   read --id <id>...          Read mixed term/glossary selections in input order
+  read --select <JSON>       Read sections/terms by titles/names; --max-chars budget
 
 Global: --root <directory> (default: cwd), --cache-dir <directory>, --help
 Output: text by default; --json for concise retrieval JSON; --debug for full records
-Reads:  --no-children for a section's own body
-        --source-hash <hash> for read-section/read-term (hash from sections --debug)
+Reads:  --no-children for read-section's own body
+        --source-hash <hash> to verify a saved read (hash from sections --debug)
+Batch:  --select accepts 1–100 section/term choices; sections default to own body
+        --max-chars defaults to 12000 Unicode characters; oversized groups are omitted
 Search: repeated --tag/--has-property; --exact-tag excludes subtags
 Line reads do not require or refresh the structural index. Use grep/rg for text search.
 Sections default to a title outline. Other lists/index/search return readable text.
@@ -49,6 +52,7 @@ Examples:
   markdown-chroma read-term 'AST' 'MyST Markdown' --root ./notes
   markdown-chroma read-glossary terms.md --title 'Authoring terms' --root ./notes
   markdown-chroma read --id 'a.md#term-ast' --id 'b.md#glossary-1'
+  markdown-chroma read --select '[{"kind":"section","file":"guide.md","title":"Setup"},{"kind":"term","name":"AST"}]'
 `;
 const commands: Record<string, string[]> = {
   index: ['rebuild'], notes: ['unresolved'], search: ['tag', 'where', 'has-property', 'exact-tag'],
@@ -56,7 +60,7 @@ const commands: Record<string, string[]> = {
   'read-lines': ['start', 'end', 'source-hash'],
   backlinks: ['term'], sections: [], 'read-section': ['id', 'label', 'title', 'heading-path', 'line', 'no-children', 'source-hash'],
   tables: ['section'], images: ['section'], glossaries: [], terms: ['glossary', 'name'],
-  'read-term': ['id', 'file', 'source-hash'], 'read-glossary': ['id', 'title', 'heading-path'], read: ['id'],
+  'read-term': ['id', 'file', 'source-hash'], 'read-glossary': ['id', 'title', 'heading-path'], read: ['id', 'select', 'max-chars'],
 };
 const flags = new Set(['help', 'json', 'debug', 'rebuild', 'unresolved', 'exact-tag', 'no-children']);
 const repeated = new Set(['id', 'tag', 'has-property']);
@@ -94,7 +98,8 @@ function parseArguments(argv: string[]): Arguments {
     ? positional.length > 0 || has('title') || has('heading-path')
     : positional.length !== 1 || ['title', 'heading-path'].filter(has).length !== 1))
     throw new IndexError('invalidArguments', 'read-glossary requires a file with --title or --heading-path, OR global --id values.');
-  if (command === 'read' && !has('id')) throw new IndexError('invalidArguments', 'read requires at least one --id.');
+  if (command === 'read' && (has('id') === has('select') || (has('max-chars') && !has('select'))))
+    throw new IndexError('invalidArguments', 'read requires --select JSON OR --id values; --max-chars applies to --select.');
   if (command === 'search' && !['tag', 'where', 'has-property'].some(has)) throw new IndexError('invalidArguments', 'search requires a tag or property filter.');
   return { command, positional, values };
 }
@@ -114,14 +119,14 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
       if (!where || Array.isArray(where) || typeof where !== 'object' || Object.values(where).some(v => v !== null && !['string', 'number', 'boolean'].includes(typeof v))) throw new IndexError('invalidArguments', '--where values must be strings, numbers, booleans or null.');
     }
     const queryArguments: Record<string, unknown> = {};
-    const mapping: Record<string, string> = { tag: 'tags', 'has-property': 'hasProperty', 'exact-tag': 'exactTag', 'source-hash': 'sourceHash', 'heading-path': 'headingPath', start: 'startLine', end: 'endLine' };
+    const mapping: Record<string, string> = { tag: 'tags', 'has-property': 'hasProperty', 'exact-tag': 'exactTag', 'source-hash': 'sourceHash', 'heading-path': 'headingPath', start: 'startLine', end: 'endLine', select: 'selections', 'max-chars': 'maxChars' };
     for (const [name, list] of values) {
       if (['root', 'cache-dir', 'json', 'debug', 'where', 'no-children'].includes(name)) continue;
       const key = name === 'id' ? (command === 'read-section' ? 'id' : 'ids') : mapping[name] ?? name;
-      if (name === 'heading-path') {
+      if (name === 'heading-path' || name === 'select') {
         try { queryArguments[key] = JSON.parse(list[0]); }
-        catch { throw new IndexError('invalidArguments', '--heading-path must be a JSON array of titles.'); }
-      } else if (['line', 'start', 'end'].includes(name)) {
+        catch { throw new IndexError('invalidArguments', `--${name} must be a JSON array.`); }
+      } else if (['line', 'start', 'end', 'max-chars'].includes(name)) {
         if (!/^\d+$/.test(list[0])) throw new IndexError('invalidArguments', `--${name} requires an integer.`);
         queryArguments[key] = Number(list[0]);
       } else queryArguments[key] = repeated.has(name) && key !== 'id' ? list : flags.has(name) ? true : list[0];
@@ -138,6 +143,8 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
     else if (has('json')) io.stdout(JSON.stringify(presentResult(result, query)) + '\n');
     else {
       if ('items' in result) for (const item of result.items) if (item.status === 'error') io.stderr(formatCliError(item.error));
+      if ('budget' in result) for (const item of result.items) if (item.status === 'omitted')
+        io.stderr(`${item.file}: ${'title' in item ? item.title : item.name}: Omitted within the read budget; needs ${item.requiredChars} characters. Request it separately or increase --max-chars.\n`);
       io.stdout(formatCliResult(result));
     }
     return (has('debug') ? result.complete : status.complete) ? 0 : 1;

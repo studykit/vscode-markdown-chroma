@@ -141,7 +141,7 @@ File arguments are exact paths relative to the server root. Optional arguments m
 | `list_terms` | `file`, `glossary`, `name` | Term names, files, and IDs for reading |
 | `read_terms` | **`names` or `ids`**, `file`, `sourceHash` | Multiple selected definitions; `file` applies only to name selection |
 | `read_glossaries` | **`ids` or `file` with `title` or `headingPath`** | Original Markdown for selected glossaries; titles select the owning section |
-| `read_items` | **`ids`** | A mix of selected terms and glossaries |
+| `read_items` | **`selections` or `ids`**, `maxChars` | Budgeted sections/terms by natural names, or legacy term/glossary IDs |
 
 A `section` filter also requires `file`. `where` is a JSON object with string, number, boolean, or null values; array properties match members. Tags include descendants by default.
 
@@ -151,11 +151,36 @@ Line reads default to 20 lines, clamp at EOF, preserve line endings, and reject 
 
 List sections first, then read an exact, case-sensitive `title`. Duplicate titles return candidate full heading paths; pass one as `headingPath: ["Parent", "Child"]`. If the path is also duplicated, candidates include IDs for explicit selection. IDs and MyST labels remain supported. Read a glossary by its file and owning section title or path, or use listed IDs for batch selections and indistinguishable glossaries. Term reads use names or listed IDs. Do not infer source line ranges. A titleless `[preamble]` item can be read with `id: "preamble"`.
 
+### Batch source reads
+
+Use `read_items` after discovering the needed files and names, reducing separate read calls:
+
+```json
+{
+  "selections": [
+    {"kind": "section", "file": "guide.md", "title": "Installation"},
+    {"kind": "section", "file": "guide.md", "headingPath": ["Installation", "macOS"]},
+    {"kind": "term", "file": "glossary.md", "name": "AST"}
+  ],
+  "maxChars": 12000
+}
+```
+
+Accept 1–100 selections. A section requires `file` and exactly one of `title`, `headingPath`, `id`, `label`, or an observed `line`. It returns its own body by default; `includeChildren: true` includes descendants. This default is specific to batch reads; `read_section` still includes children by default. A term requires `name` and optionally `file` to disambiguate definitions. Each selection can supply `sourceHash` when a previous Node/debug snapshot must match.
+
+Repeated selections are removed. Overlapping ranges in a file return original source once, positioned at the first contributing selection, with `covers` listing the other names included. Separate ranges preserve request order. No generated summaries replace source.
+
+`maxChars` defaults to 12,000 and accepts 1–200,000. It counts Unicode characters in returned source, not model tokens or response metadata. Omit a whole merged range if it cannot fit, then try later ranges. An omitted item has `omitted: true`, `reason: "budget"`, and `requiredChars`; the response includes `budget: {maxChars, usedChars}`. Retry a smaller selection or increase the budget. A merged parent/child range is omitted together; retry just the child if needed.
+
+Omissions and selection errors return `complete: false` and `isError: true` while preserving successful content. If all selections include `file`, unrelated document issues are excluded. A name-only term selection retains project-wide completeness. Successful batches omit budget metadata from concise responses. Node/debug responses retain ranges, hashes, statuses, and the budget.
+
+The existing `ids` mode reads terms and glossaries, deduplicates IDs, and preserves overlapping item content. It cannot be combined with `selections` or `maxChars`.
+
 ## Results and saved-file behavior
 
 Results contain retrieval information and `complete`. They omit cache paths, versions, hashes, parser ranges and records. Observed shell-search line numbers may be supplied to read tools. MCP returns the same concise result as `structuredContent` and JSON text `content`. Partial results use `complete: false` and `isError: true`, preserving successful items alongside `issues` or per-item errors. SDK input validation errors may have text content without `structuredContent`.
 
-`issues` contains one short summary of relevant problems. File queries and section or explicit-item reads exclude unrelated document or source-range syntax diagnostics. File-wide frontmatter/configuration problems remain relevant. Global discovery, name-only term lookup, and backlinks retain project-wide completeness, as parsing failures can hide matches. Per-item errors always make a batch partial. The Node API and CLI `--debug` retain all snapshot diagnostics and project-wide status.
+`issues` contains one short summary of relevant problems. File queries and section or explicit-item reads exclude unrelated document or source-range syntax diagnostics. File-wide frontmatter/configuration problems remain relevant. Global discovery, name-only term lookup, and backlinks retain project-wide completeness, as parsing failures can hide matches. Per-item errors and budget omissions always make a batch partial. The Node API and CLI `--debug` retain all snapshot diagnostics and project-wide status.
 
 For example, `list_sections` returns:
 

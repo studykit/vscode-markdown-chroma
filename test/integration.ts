@@ -38,6 +38,13 @@ export async function run(): Promise<void> {
     assert.ok(line > 0);
     const read = (await client.callTool({ name: 'read_section', arguments: { file: 'Showcase.md', line } })).structuredContent as any;
     assert.match(read.content, /Markdown Chroma/);
+    const batchResult = await client.callTool({ name: 'read_items', arguments: { selections: [
+      { kind: 'section', file: 'Showcase.md', line }, { kind: 'section', file: 'Showcase.md', line },
+    ] } });
+    const batch = batchResult.structuredContent as any;
+    assert.equal(batchResult.isError, undefined); assert.equal(batch.items.length, 1);
+    assert.match(batch.items[0].content, /Markdown Chroma/);
+    assert.equal(batch.items[0].sourceHash, undefined); assert.equal(batch.items[0].startLine, undefined);
   } finally { await client.close(); }
   const configuration = vscode.workspace.getConfiguration('markdownChroma.mcp', vscode.workspace.workspaceFolders![0].uri);
   const initialEnabled = configuration.inspect('enabled')?.workspaceValue;
@@ -59,7 +66,7 @@ export async function run(): Promise<void> {
     await configuration.update('root', initialRoot, vscode.ConfigurationTarget.Workspace);
     listener.dispose(); tokenSource.dispose();
   }
-  console.log('PASS: native MCP provider launches bundled stdio server with host runtime, exposes 15 tools, reads observed source lines and enforces workspace settings');
+  console.log('PASS: native MCP provider launches bundled stdio server with host runtime, exposes 15 tools, reads observed lines and deduplicated batches, and enforces workspace settings');
   const showcase = await vscode.workspace.openTextDocument(path.join(root, 'Showcase.md'));
   await vscode.window.showTextDocument(showcase);
   await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');

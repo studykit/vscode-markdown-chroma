@@ -1,6 +1,7 @@
 import { posix } from 'node:path';
 import type { IndexQuery, QueryResult, errorRecord } from './query';
 import type { Section } from './types';
+import type { ReadSelection, SelectionInfo } from './types';
 
 type ErrorRecord = ReturnType<typeof errorRecord>;
 export interface SectionOutline { title: string; id?: string; children?: SectionOutline[] }
@@ -9,14 +10,16 @@ export interface SectionOutline { title: string; id?: string; children?: Section
 export function retrievalStatus(result: QueryResult, query?: IndexQuery) {
   const all = result.diagnostics ?? [];
   const files = new Map<string, { startLine: number; endLine: number }[] | undefined>();
+  const scopedBatch = query?.command === 'read' && query.arguments.selections?.every(s => !!s.file);
+  if (scopedBatch && query?.command === 'read') for (const s of query.arguments.selections!) files.set(posix.normalize(s.file!), undefined);
   if ('sections' in result) files.set(result.file, undefined);
   else if ('content' in result) files.set(result.file, [{ startLine: result.startLine, endLine: result.endLine }]);
   else if (query && 'file' in query.arguments && query.arguments.file && query.command !== 'backlinks') {
     files.set(posix.normalize(query.arguments.file), undefined);
   }
   if ('items' in result && query && (('ids' in query.arguments && query.arguments.ids) || query.command === 'read-glossary'
-    || ('file' in query.arguments && query.arguments.file))) {
-    for (const item of result.items) if (item.status === 'ok') {
+    || scopedBatch || ('file' in query.arguments && query.arguments.file))) {
+    for (const item of result.items) if (item.status === 'ok' || item.status === 'omitted') {
       const ranges = files.get(item.file) ?? [];
       ranges.push({ startLine: item.startLine, endLine: item.endLine }); files.set(item.file, ranges);
     }
@@ -29,7 +32,7 @@ export function retrievalStatus(result: QueryResult, query?: IndexQuery) {
     const ranges = files.get(issue.file);
     return !ranges || issue.code !== 'mystSyntax' || !issue.line || ranges.some(range => issue.line! >= range.startLine && issue.line! <= range.endLine);
   }) : all;
-  const itemError = 'items' in result && result.items.some(item => item.status === 'error');
+  const itemError = 'items' in result && result.items.some(item => item.status !== 'ok');
   const complete = result.complete || (!!all.length && !diagnostics.length && !itemError);
   const affected = [...new Set(diagnostics.map(issue => issue.file).filter(Boolean))];
   const action = query?.command === 'read-lines' ? 'read' : 'indexed';
@@ -105,6 +108,12 @@ export function formatCliResult(result: QueryResult): string {
       return `${choice} (${display(glossary.file)}; ${glossary.termCount} ${glossary.termCount === 1 ? 'term' : 'terms'}${needsId ? `; id: ${glossary.id}` : ''})`;
     }), 'No glossaries found.');
   }
+  if ('budget' in result) return result.items.filter(item => item.status === 'ok').map(item => {
+    if (item.status !== 'ok') return '';
+    const name = item.kind === 'section' ? item.headingPath.join(' > ') || item.title : item.name;
+    const covers = item.covers?.map(c => c.kind === 'section' ? c.headingPath.join(' > ') || c.title : c.name);
+    return `\n<!-- ${item.kind}: ${display(name)} | ${display(item.file)}${covers?.length ? '; also covers: ' + covers.map(display).join(', ') : ''} -->\n${item.content}`;
+  }).join('');
   return result.items.filter(item => item.status === 'ok').map(item => {
     if (item.status !== 'ok') return '';
     return `${result.items.length > 1 ? `\n<!-- ${item.kind}: ${display(item.name ?? '')} | ${display(item.file)} -->\n` : ''}${item.content}`;
@@ -125,6 +134,12 @@ export function formatCliError(error: ErrorRecord): string {
 
 const location = (item: { file: string; headingPath: string[] }) => ({ file: item.file,
   ...(item.headingPath.length ? { headingPath: item.headingPath } : { sectionId: 'preamble' }) });
+const selectionInfo = (item: SelectionInfo) => item.kind === 'section'
+  ? { kind: item.kind, file: item.file, title: item.title, headingPath: item.headingPath }
+  : { kind: item.kind, file: item.file, name: item.name };
+const presentSelection = (selection: ReadSelection) => {
+  const { sourceHash: _hash, ...choice } = selection; return choice;
+};
 
 export function presentResult(result: QueryResult, query?: IndexQuery): Record<string, unknown> & { complete: boolean } {
   let data: Record<string, unknown>;
@@ -148,6 +163,11 @@ export function presentResult(result: QueryResult, query?: IndexQuery): Record<s
       ...(glossary.name ? { name: glossary.name } : {}), terms: glossary.termCount })) };
   }
   else if ('terms' in result) data = { terms: result.terms.map(term => ({ id: term.id, name: term.name, file: term.file })) };
+  else if ('budget' in result) data = { items: result.items.map(item => item.status === 'error'
+    ? { selector: presentSelection(item.selector), error: presentError(item.error) }
+    : { ...selectionInfo(item), ...(item.covers?.length ? { covers: item.covers.map(selectionInfo) } : {}),
+      ...(item.status === 'ok' ? { content: item.content } : { omitted: true, reason: 'budget', requiredChars: item.requiredChars }) }),
+    ...(result.items.some(item => item.status === 'omitted') ? { budget: result.budget } : {}) };
   else data = { items: result.items.map(item => item.status === 'error' ? { selector: item.selector, error: presentError(item.error) }
     : { kind: item.kind, file: item.file, ...(item.name ? { name: item.name } : {}), content: item.content }) };
   const status = retrievalStatus(result, query);

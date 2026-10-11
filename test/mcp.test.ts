@@ -36,6 +36,8 @@ test('shared queries preserve CLI results, validate selectors and recover after 
       [{ command: 'read-section', arguments: { file: 'guide.md', title: 'Setup', includeChildren: false } }, ['read-section', 'guide.md', '--title', 'Setup', '--no-children']],
       [{ command: 'read-section', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }, ['read-section', 'guide.md', '--heading-path', '["Setup","Child"]']],
       [{ command: 'read-term', arguments: { names: ['AST', 'Role', 'missing'] } }, ['read-term', 'AST', 'Role', 'missing']],
+      [{ command: 'read', arguments: { selections: [{ kind: 'section', file: 'guide.md', title: 'Setup' }, { kind: 'term', file: 'guide.md', name: 'Role' }] } },
+        ['read', '--select', '[{"kind":"section","file":"guide.md","title":"Setup"},{"kind":"term","file":"guide.md","name":"Role"}]']],
     ];
     for (const [query, args] of queries) {
       let stdout = '';
@@ -100,6 +102,17 @@ test('stdio MCP discovers and executes all 15 tools with API parity, partial rea
       ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', title: 'Child' } }],
       ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }],
       ['read_items', { command: 'read', arguments: { ids: [role.id, glossary.id, role.id, 'missing'] } }],
+      ['read_items', { command: 'read', arguments: { selections: [
+        { kind: 'section', file: 'guide.md', headingPath: ['Setup', 'Child'] },
+        { kind: 'term', file: 'guide.md', name: 'AST' },
+        { kind: 'section', file: 'guide.md', title: 'Setup' },
+      ] } }],
+      ['read_items', { command: 'read', arguments: { selections: [
+        { kind: 'term', name: 'AST' }, { kind: 'section', file: 'guide.md', title: 'Setup' },
+      ] } }],
+      ['read_items', { command: 'read', arguments: { selections: [
+        { kind: 'section', file: 'guide.md', title: 'Child' }, { kind: 'section', file: 'guide.md', title: 'Setup' },
+      ], maxChars: 30 } }],
     ];
     for (const [name, query] of queries) {
       const result = await call(name, query.arguments);
@@ -114,6 +127,8 @@ test('stdio MCP discovers and executes all 15 tools with API parity, partial rea
     assert.equal(invalidTitle.isError, true);
     const injectedRoot = await call('list_notes', { root: f.directory });
     assert.equal(injectedRoot.isError, true);
+    const invalidBatch = await call('read_items', { selections: [{ kind: 'section', file: 'guide.md', title: 'Setup', line: 8 }] });
+    assert.equal(invalidBatch.isError, true);
     const original = await f.service.execute({ command: 'sections', arguments: { file: 'guide.md' } });
     assert.ok('sourceHash' in original);
     const oldHash = original.sourceHash;
@@ -127,6 +142,10 @@ test('stdio MCP discovers and executes all 15 tools with API parity, partial rea
     await fs.writeFile(path.join(f.root, 'broken.md'), '---\na: 1\na: 2\n---\n# Broken\n');
     const scoped = await call('list_sections', { file: 'guide.md' });
     assert.equal(scoped.data.complete, true); assert.equal(scoped.isError, undefined); assert.equal(scoped.data.issues, undefined);
+    const batch = await call('read_items', { selections: [
+      { kind: 'section', file: 'guide.md', title: 'Setup' }, { kind: 'term', file: 'guide.md', name: 'Role' },
+    ] });
+    assert.equal(batch.data.complete, true); assert.equal(batch.isError, undefined); assert.equal(batch.data.issues, undefined);
     const global = await call('list_notes');
     assert.equal(global.isError, true); assert.equal(global.data.issues.length, 1);
     const local = await call('list_sections', { file: 'broken.md' });

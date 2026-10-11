@@ -78,7 +78,7 @@ If a title appears more than once, the error lists candidate heading paths. Sele
 markdown-chroma read-section guide.md --root ./notes --heading-path '["Installation","macOS"]'
 ```
 
-If the full path also appears more than once, candidates include IDs for those sections; use `--id` to select one. `--label` remains available for MyST heading labels. Specify exactly one of `--title`, `--heading-path`, `--id`, or `--label`.
+If the full path also appears more than once, candidates include IDs for those sections; use `--id` to select one. `--label` remains available for MyST heading labels. Specify exactly one of `--title`, `--heading-path`, `--id`, `--label`, or an observed `--line`.
 
 Section reads include child sections by default. Add `--no-children` for the selected section's own body. Reads return the original Markdown; add `--json` to receive the file and `content` as retrieval JSON.
 
@@ -119,13 +119,33 @@ markdown-chroma read-glossary glossary.md --title 'Authoring terms' --root ./not
 
 Duplicate glossary titles can be selected with `--heading-path '["Guide","Authoring terms"]'`. If several glossaries share the same heading path, or a glossary has no owning heading, use an ID shown in the list or error candidates.
 
-You can read selected terms and glossaries together, using actual IDs from the list responses:
+## Read several pieces of evidence at once
+
+After finding files with shell tools and listing their section titles or terms, select the needed source in one request:
+
+```sh
+markdown-chroma read --root ./notes --select '[
+  {"kind":"section","file":"guide.md","title":"Installation"},
+  {"kind":"section","file":"guide.md","headingPath":["Installation","macOS"]},
+  {"kind":"term","file":"glossary.md","name":"AST"}
+]' --max-chars 12000
+```
+
+Batch sections return their own body by default. Set `"includeChildren":true` on a section selection to include its descendants. A section requires `file` and exactly one of `title`, `headingPath`, `id`, `label`, or an observed `line`. A term requires `name`; add `file` when the name has multiple definitions. Ambiguous selections return candidates alongside the other successful reads.
+
+The batch accepts up to 100 selections. It removes repeated selections and merges overlapping source ranges within a file, preserving the original Markdown and line endings. A merged range appears at the position of its first selection; its `covers` information identifies the other selections included in that content. Separate ranges stay in request order.
+
+`--max-chars` limits returned source to 12,000 Unicode characters by default (allowed range: 1–200,000). It is a source-length budget, not a model token count, and excludes response labels and diagnostics. A whole merged range that does not fit is omitted; later, smaller ranges can still fit. The CLI reports each omission on stderr and exits with status 1. Retry a smaller selection or raise the budget to retrieve omitted content. It never silently cuts a definition or code block in half. If a selected parent and child overlap, they are one range; retry the child alone if the combined range is too large.
+
+`--json` returns content, natural selection names, and per-item errors or omissions. It includes the budget only when source was omitted. `--debug` retains ranges, hashes, statuses, and the budget for every batch. File-scoped selections exclude unrelated document issues; a term selected without `file` retains project-wide completeness.
+
+You can also read selected terms and glossaries together using actual IDs from the list responses:
 
 ```sh
 markdown-chroma read --root ./notes --id '<term-id>' --id '<glossary-id>'
 ```
 
-Batch reads preserve your selection order and remove identical repeated selections. If an item cannot be read, successful items are still returned with errors for the missing items.
+This ID mode preserves selection order and removes repeated IDs. It retains separate term and glossary content, including overlaps, and does not accept `--select` or `--max-chars`. In either mode, successful items remain available when another selection fails.
 
 ## Keep the index up to date
 

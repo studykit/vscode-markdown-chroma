@@ -358,6 +358,25 @@ test('implicit MyST heading references prefer local targets and exact Markdown f
   assert.equal((await f.cli('read-section', 'a.md', '--label', 'heading-name', '--debug')).json().section.id, 'heading-name');
 });
 
+test('text-bearing label fragments resolve project labels, preserve local heading links and refresh without reparsing', async t => {
+  const f = await fixture({ 'target.md': '(parts:site)=\n# Site parts\n',
+    'source.md': '# Local\n[site parts](#parts:site) [encoded](#parts%3Asite) [heading](#local) [missing](#unknown)\n',
+    'other.md': '# Local\n[explicit path](source.md#local) [[#Local]]\n' }); t.after(f.cleanup);
+  await f.index.refresh();
+  const refs = f.index.document('source.md').outgoing;
+  assert.deepEqual(refs.slice(0, 2).map(r => [r.resolution?.file, r.resolution?.fragmentStatus]), [['target.md', 'found'], ['target.md', 'found']]);
+  assert.equal(refs[2].resolution?.file, 'source.md'); assert.equal(refs[2].resolution?.targetId, 'local');
+  assert.equal(refs[3].resolution?.file, 'source.md'); assert.equal(refs[3].resolution?.fragmentStatus, 'missing');
+  assert.deepEqual(f.index.document('other.md').outgoing.map(r => r.resolution?.file), ['source.md', 'other.md']);
+  assert.equal(f.index.backlinks(f.index.document('target.md')).length, 2);
+  const snapshot = JSON.parse(await fs.readFile(f.index.cacheFile, 'utf8'));
+  snapshot.documents.find((d: any) => d.file === 'source.md').outgoing[0].resolution = { status: 'found', file: 'source.md', fragmentStatus: 'missing' };
+  await fs.writeFile(f.index.cacheFile, JSON.stringify(snapshot));
+  await f.index.refresh(); assert.equal(f.index.stats.parsed, 0); assert.equal(f.index.document('source.md').outgoing[0].resolution?.file, 'target.md');
+  await f.write('duplicate.md', '(parts:site)=\n# Duplicate\n'); await f.index.refresh();
+  assert.equal(f.index.document('source.md').outgoing[0].resolution?.status, 'ambiguous');
+});
+
 test('local MyST config and frontmatter overrides invalidate parsing; bibliography citations are excluded', async t => {
   const f = await fixture({ 'myst.yml': 'extends: base.yml\nproject:\n  bibliography: refs.bib\n', 'base.yml': 'project:\n  settings:\n    parser:\n      dollarmath: false\n', 'refs.bib': '@article{known, title={Title}, author={Author}, year={2025}}\n',
     'a.md': '# A\n$[[InMath]]$ @known @unknown\n', 'b.md': '---\nsettings:\n  parser:\n    dollarmath: true\n---\n# B\n$[[InMath]]$\n' }); t.after(f.cleanup);

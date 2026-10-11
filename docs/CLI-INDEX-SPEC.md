@@ -158,6 +158,9 @@ markdown-chroma read-glossary --root ./docs --id 'glossary.md#glossary-1' --id '
 # Read terms and glossaries together
 markdown-chroma read --root ./docs --id 'glossary.md#term-ast' --id 'syntax.md#glossary-1'
 
+# Read selected section bodies and definitions together
+markdown-chroma read --root ./docs --select '[{"kind":"section","file":"guide.md","title":"Installation"},{"kind":"term","file":"glossary.md","name":"AST"}]' --max-chars 12000
+
 # Find references to a term definition
 markdown-chroma backlinks glossary.md --root ./docs --term term-myst-markdown
 ```
@@ -181,7 +184,7 @@ CLI default text and concise JSON use the shared presentation layer. CLI `--json
 | Glossaries | Owning section title, file and term count; JSON also retains selection IDs and paths for duplicates |
 | Terms | Selection ID, name and file |
 | Section read | File and original content |
-| Batch reads | Kind, file, optional name and original content; failed selections retain errors |
+| Batch reads | Kind, file, natural selection name/path and original content; merged selections expose `covers`; failures and budget omissions remain actionable |
 | `read-lines` | Saved source file and exact content |
 
 JSON retrieval results retain `complete` and actionable `issues` or error `candidates`. They omit schema/parser versions, root/cache paths, generations, parsing statistics, hashes, line ranges, normalized identifiers, and outgoing records. Selection IDs are exposed when needed for an actual read. Internal source-hash checks remain in force; callers requiring an explicit snapshot check can obtain hashes through the Node API or CLI `--debug`.
@@ -270,6 +273,8 @@ Run line reads through the same serialized, root-bound `IndexService`, but bypas
 Store outgoing references when indexing a document, resolve their target files and labels, and provide reverse queries. When documents are added, deleted, or renamed, or labels change, resolve references from unchanged source documents again to update backlinks.
 
 Resolve Obsidian bare-filename links in this order: the source folder, the project root, then a unique filename or frontmatter alias within the project. Resolve wikilinks with explicit paths from the root, except `./` and `../`, which are relative to the source file. Ordinary Markdown links are relative to the source file. Resolve MyST document and label references using their syntax context and project targets.
+
+For a text-bearing Markdown link such as `[site parts](#parts:site)`, decode the fragment and resolve a matching explicit project label before falling back to a local heading fragment. A duplicate explicit label is ambiguous; do not prefer the source document. Explicit file links and ordinary local heading links retain their existing resolution. Recompute these resolutions during refresh even when unchanged parsed records are reused.
 
 Return candidates when multiple targets match; do not select one automatically. Exclude external URLs from document backlinks. Embeds use the same target resolution as ordinary links but have `kind: "embed"`. Wikilinks in frontmatter properties are excluded from v1 backlinks.
 
@@ -463,15 +468,34 @@ If a name matches multiple definitions, return `ambiguousTerm` with candidate ID
 
 `--debug` uses the multi-item result format below. Extract definition source from files at read time; do not persist full bodies in the disk index. For items from one document, `--source-hash` provides the same document-change check as section reads. Do not apply one hash to items selected from different documents.
 
-## Reading entire glossaries and multiple items
+## Natural-name batch reads
+
+`read --select <JSON-array> [--max-chars <number>]` and MCP `read_items({selections, maxChars})` read selected sections and term definitions through the same root-bound service. Accept 1–100 selections in a single refreshed snapshot. Each selection is one of:
+
+- Section: `kind: "section"`, `file`, and exactly one of `title`, `headingPath`, `id`, `label`, or an externally observed `line`; optional `includeChildren` and `sourceHash`.
+- Term: `kind: "term"` and `name`; optional `file` and `sourceHash`.
+
+Section titles and paths use the same exact selection and ambiguity behavior as `read-section`. In this batch mode, sections default to their own body (`ownEndLine`); `includeChildren: true` includes descendants. Single `read-section` reads continue to include children by default. Term names use normal term normalization; multiple matching definitions return `ambiguousTerm`. A supplied file restricts the term search to that document. Validate each supplied hash independently against its selected document and verify saved source again at read time.
+
+Deduplicate identical selectors regardless of JSON key order. Merge overlapping inclusive line ranges within the same file before reading, including a term covered by a selected section and a child covered by a selected parent. Adjacent nonoverlapping ranges remain separate. Preserve exact original source and line endings; do not generate summaries or persist bodies. Place each merged range at the first contributing selector's position. Use the widest selected range's natural name as its representative and list other distinct selection names in `covers`. Keep nonoverlapping groups and selection errors in request order. The representative's name identifies a contributing selection; `covers` identifies additional selections included in the merged content.
+
+The source budget defaults to 12,000 Unicode code points. `maxChars` / `--max-chars` accepts an integer from 1 to 200,000 and counts only returned source, excluding response metadata. This is not a model-specific token estimate. Omit an entire merged range when adding it would exceed the remaining budget; continue trying later groups. Do not split a code block or definition, and do not fall back to a child subset of an oversized merged range. Callers can retry the child alone or increase the budget. Preserve successful reads alongside errors and omissions.
+
+Concise JSON and MCP expose successful items with `kind`, `file`, `title` and `headingPath` or term `name`, optional `covers`, and `content`. Errors expose the original selector without `sourceHash` and an actionable error with candidates. Omitted items expose natural selection information, optional `covers`, `omitted: true`, `reason: "budget"`, and `requiredChars`. Include top-level `budget: {maxChars, usedChars}` only when an item is omitted. Node and CLI `--debug` additionally expose statuses, exact ranges, hashes, and the budget for every batch.
+
+Any error or omission makes the batch partial (`complete: false`; MCP `isError: true`; CLI exit 1). Default CLI text writes original successful source to stdout with selection comments and failures or omissions to stderr. If every selector specifies `file`, scope retrieval diagnostics to those documents and selected ranges. A term selected without `file` retains project-wide completeness because parsing failures can hide a definition. Full Node/debug results always retain snapshot diagnostics.
+
+Natural-name selections and legacy IDs are mutually exclusive. `maxChars` applies only to natural-name selections. Individual table/image reads remain outside this scope; list their owning sections and select the needed source instead.
+
+## Reading entire glossaries and legacy item IDs
 
 `read-glossary <file> --title <title>` reads a glossary whose owning section has that exact, case-sensitive title. Match the directly owning section, excluding glossaries in child sections. If several glossaries match the title, return `ambiguousGlossary` with candidate full heading paths; select one with `--heading-path '["Parent","Terms"]'`. If several glossaries share that path, include their global IDs and require explicit ID selection. A missing match returns `glossaryNotFound`.
 
 `read-glossary --id <id>` remains available for an unheaded or indistinguishable glossary and for batch selections. Repeat `--id` to select multiple glossaries, including those in different files. IDs cannot be combined with a file or title/path selector. The Node API and MCP `read_glossaries` accept `ids` OR `file` with exactly one `title` or `headingPath`. Return MyST labels, opening and closing glossary directive syntax, and all enclosed term definitions unchanged.
 
-`read --id <id>` determines each selected item's kind from the index and supports terms and glossaries in the same request. These are the supported kinds in v1. Read sections with `read-section`; individual table and image source reads remain future work. Use `read-term` to restrict the kind and select by name.
+`read --id <id>` determines each selected item's kind from the index and supports terms and glossaries in the same request. This compatibility mode retains its existing item kinds and unbudgeted behavior. Read sections with `read-section` or natural-name batch selections. Use `read-term` to restrict the kind and select by name.
 
-Return multiple items in request order. Deduplicate repeated IDs at their first position. A glossary and a term within it are distinct items, so selecting both returns both. Do not remove overlapping content automatically.
+In ID mode, return multiple items in request order. Deduplicate repeated IDs at their first position. A glossary and a term within it are distinct items, so selecting both returns both. Preserve overlapping content in this compatibility mode.
 
 The default output for one item is its source. For multiple items, Markdown output prefixes each item with its kind, name, and source file to show boundaries, while preserving its `content` unchanged. `--debug` uses an `items` array for both single and multiple selections. Each full-record item provides `kind`, ID, name, source file, membership metadata, source range, document hash, status, and `content`.
 

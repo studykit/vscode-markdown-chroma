@@ -19,6 +19,14 @@ export interface Image extends ContentItem {
 }
 export interface Glossary extends ContentItem { localId: string; name: string | null; termCount: number }
 export interface Term extends ContentItem { localId: string; identifier: string; name: string; glossaryId: string }
+export type ReadSelection = { kind: 'section'; file: string; title?: string; headingPath?: string[]; id?: string;
+  label?: string; line?: number; includeChildren?: boolean; sourceHash?: string }
+  | { kind: 'term'; name: string; file?: string; sourceHash?: string };
+export type SelectionInfo = { kind: 'section'; file: string; title: string; headingPath: string[] }
+  | { kind: 'term'; file: string; name: string };
+export type BatchReadItem = (SelectionInfo & Range & { sourceHash: string; covers?: SelectionInfo[] } &
+  ({ status: 'ok'; content: string } | { status: 'omitted'; reason: 'budget'; requiredChars: number }))
+  | { status: 'error'; selector: ReadSelection; error: ReturnType<typeof errorRecord> };
 export interface Target extends Range { label: string; identifier: string; kind: string; id: string | null; nodeStartLine: number; implicit?: boolean }
 export interface Resolution {
   status: 'found' | 'missing' | 'ambiguous' | 'outside' | 'external' | 'citation';
@@ -43,6 +51,10 @@ export interface ProjectIndex {
 }
 export class IndexError extends Error {
   constructor(public code: string, message: string, public details?: unknown) { super(message); }
+}
+export function errorRecord(error: unknown) {
+  return error instanceof IndexError ? { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }
+    : { code: 'internalError', message: error instanceof Error ? error.message : String(error) };
 }
 export const normalizeTag = (value: string) => value.replace(/^#/, '').normalize('NFC').toLowerCase();
 export const globalId = (file: string, id: string) => `${file.split('/').map(encodeURIComponent).join('/')}#${encodeURIComponent(id)}`;

@@ -1,13 +1,23 @@
 import * as z from 'zod/v4';
 import { termIdentifier } from './parser';
 import { MarkdownIndex, unresolved } from './project';
-import { IndexError, SCHEMA_VERSION, normalizeTag, type Diagnostic, type Glossary, type Term } from './types';
+import { readBatch } from './batch';
+import { IndexError, errorRecord, SCHEMA_VERSION, normalizeTag, type Diagnostic, type Glossary, type Term } from './types';
+export { errorRecord } from './types';
 
 const text = z.string().min(1);
 const file = text.describe('Root-relative Markdown file path; use paths returned by list_notes.');
 const ids = z.array(text).min(1).describe('Global IDs from list_terms or list_glossaries, in desired output order.');
 const scope = { file: file.optional() };
 const sectionScope = z.strictObject({ ...scope, section: text.optional() }).refine(value => !value.section || !!value.file, 'section requires file');
+const sectionFields = { file, title: text.optional(), headingPath: z.array(text).min(1).optional(), id: text.optional(),
+  label: text.optional(), line: z.number().int().min(1).max(1000000).optional(), includeChildren: z.boolean().optional(), sourceHash: text.optional() };
+const oneSection = (v: { title?: string; headingPath?: string[]; id?: string; label?: string; line?: number }) =>
+  [v.title, v.headingPath, v.id, v.label, v.line].filter(value => value !== undefined).length === 1;
+const selection = z.union([
+  z.strictObject({ kind: z.literal('section'), ...sectionFields }).refine(oneSection, 'Specify exactly one title, headingPath, id, label or line'),
+  z.strictObject({ kind: z.literal('term'), name: text, ...scope, sourceHash: text.optional() }),
+]);
 export const querySchemas = {
   index: z.strictObject({ rebuild: z.boolean().optional() }),
   notes: z.strictObject({ unresolved: z.boolean().optional() }),
@@ -17,9 +27,7 @@ export const querySchemas = {
   }).refine(value => !!(value.tags?.length || value.hasProperty?.length || value.where !== undefined), 'At least one tag or property filter is required'),
   backlinks: z.strictObject({ file, term: text.optional() }),
   sections: z.strictObject({ file }),
-  'read-section': z.strictObject({ file, title: text.optional(), headingPath: z.array(text).min(1).optional(),
-    id: text.optional(), label: text.optional(), line: z.number().int().min(1).max(1000000).optional(), includeChildren: z.boolean().optional(), sourceHash: text.optional() })
-    .refine(value => [value.title, value.headingPath, value.id, value.label, value.line].filter(value => value !== undefined).length === 1, 'Specify exactly one title, headingPath, id, label or line'),
+  'read-section': z.strictObject(sectionFields).refine(oneSection, 'Specify exactly one title, headingPath, id, label or line'),
   'read-lines': z.strictObject({ file, startLine: z.number().int().min(1).max(1000000), endLine: z.number().int().min(1).max(1000000).optional(), sourceHash: text.optional() })
     .refine(value => value.endLine === undefined || value.endLine >= value.startLine, 'endLine must be at or after startLine'),
   'read-frontmatter': z.strictObject({ file, sourceHash: text.optional() }),
@@ -33,15 +41,15 @@ export const querySchemas = {
     .refine(value => value.ids ? !value.file && !value.title && !value.headingPath
       : !!value.file && Number(value.title !== undefined) + Number(value.headingPath !== undefined) === 1,
     'Specify ids OR a file with exactly one title or headingPath'),
-  read: z.strictObject({ ids }),
+  read: z.strictObject({ ids: ids.optional(), selections: z.array(selection).min(1).max(100).optional()
+    .describe('Ordered section/term selections. Sections return their own body unless includeChildren is true. Overlapping source is returned once.'),
+    maxChars: z.number().int().min(1).max(200000).optional()
+      .describe('Returned-source Unicode character budget, default 12000. Whole merged groups that do not fit are omitted; later groups may fit. Not a model token count.') })
+    .refine(v => v.ids ? !v.selections && v.maxChars === undefined : !!v.selections, 'Specify ids OR selections; maxChars applies to selections'),
 };
 export type QueryCommand = keyof typeof querySchemas;
 export type QueryArguments<C extends QueryCommand> = z.infer<(typeof querySchemas)[C]>;
 export type IndexQuery = { [C in QueryCommand]: { command: C; arguments: QueryArguments<C> } }[QueryCommand];
-export function errorRecord(error: unknown) {
-  return error instanceof IndexError ? { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }
-    : { code: 'internalError', message: error instanceof Error ? error.message : String(error) };
-}
 export type ReadItem = ((Term | Glossary) & { kind: 'term' | 'glossary'; status: 'ok'; content: string })
   | { selector: string; status: 'error'; error: ReturnType<typeof errorRecord> };
 export type QueryResult = Awaited<ReturnType<typeof executeQuery>>;
@@ -76,6 +84,10 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
   const envelope = <T extends object>(result: T, complete = index.complete): T & { schemaVersion: number; complete: boolean; diagnostics?: Diagnostic[] } =>
     ({ schemaVersion: SCHEMA_VERSION, complete, ...result, ...(index.diagnostics.length ? { diagnostics: index.diagnostics } : {}) });
   const documents = index.data.documents;
+  if (query.command === 'read' && query.arguments.selections) {
+    const batch = readBatch(index, query.arguments.selections, query.arguments.maxChars);
+    return envelope(batch, index.complete && batch.items.every(item => item.status === 'ok'));
+  }
   switch (query.command) {
     case 'index': return envelope({ root: index.root, cacheFile: index.cacheFile, generation: index.data.generation, documentCount: documents.length, ...index.stats });
     case 'notes':

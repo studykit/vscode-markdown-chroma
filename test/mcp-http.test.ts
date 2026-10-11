@@ -54,6 +54,16 @@ test('HTTP URL discovers the same tools and reads fresh root-bound content acros
       ['read_glossaries', { command: 'read-glossary', arguments: { file: 'guide.md', headingPath: ['Setup', 'Child'] } }],
       ['read_terms', { command: 'read-term', arguments: { ids: [term.id] } }],
       ['read_items', { command: 'read', arguments: { ids: [term.id, 'missing'] } }],
+      ['read_items', { command: 'read', arguments: { selections: [
+        { kind: 'section', file: 'guide.md', headingPath: ['Setup', 'Child'] }, { kind: 'term', file: 'guide.md', name: 'AST' },
+        { kind: 'section', file: 'guide.md', title: 'Setup' },
+      ] } }],
+      ['read_items', { command: 'read', arguments: { selections: [
+        { kind: 'section', file: 'guide.md', title: 'Missing' }, { kind: 'term', file: 'guide.md', name: 'AST' },
+      ] } }],
+      ['read_items', { command: 'read', arguments: { selections: [
+        { kind: 'section', file: 'guide.md', title: 'Child' }, { kind: 'section', file: 'guide.md', title: 'Setup' },
+      ], maxChars: 20 } }],
     ];
     for (const [name, query] of queries) assert.deepEqual(await call(clients[0], name, query.arguments), presentResult(await f.service.execute(query), query));
     const escaped = await call(clients[0], 'list_sections', { file: '../outside.md' });
@@ -73,6 +83,12 @@ test('HTTP URL discovers the same tools and reads fresh root-bound content acros
     assert.equal(global.complete, false); assert.equal(global.issues.length, 1);
     const scoped = await call(clients[0], 'read_section', { file: 'guide.md', title: 'Setup' });
     assert.equal(scoped.complete, true); assert.equal(scoped.issues, undefined);
+    const batchResult = await clients[1].callTool({ name: 'read_items', arguments: { selections: [
+      { kind: 'section', file: 'guide.md', title: 'Child' }, { kind: 'section', file: 'guide.md', title: 'Setup' },
+    ], maxChars: 20 } });
+    const batch = batchResult.structuredContent as any;
+    assert.equal(batchResult.isError, true); assert.equal(batch.complete, false); assert.equal(batch.issues, undefined);
+    assert.equal(batch.items[0].omitted, true); assert.match(batch.items[1].content, /Updated/);
     assert.deepEqual(errors, []);
   } finally { await Promise.all(clients.map(client => client.close())); await handle.close(); await f.cleanup(); }
 });

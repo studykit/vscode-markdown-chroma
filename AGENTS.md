@@ -76,7 +76,7 @@ Choose verification according to the change:
 | Preview document lookup, aliases, and file access | `src/vault.ts` |
 | MyST rendering, references, and optional configuration | `src/myst.ts`, `src/references.ts`, `src/myst-config.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
-| Persistent indexing, parsing, source reads, records, shared queries, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
+| Persistent indexing, parsing, source reads, records, shared queries, batch reads, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/batch.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
 | CLI entry point and argument handling | `src/cli.ts`, `src/index/cli.ts` |
 | Public Node API exports | `src/index/index.ts` |
 | MCP entry point, transport selection, stdio / HTTP lifecycle, and tools | `src/mcp.ts`, `src/mcp/cli.ts`, `src/mcp/stdio.ts`, `src/mcp/http.ts`, `src/mcp/server.ts` |
@@ -112,6 +112,8 @@ The shared preview settings are `markdownChroma.preview.root` and `markdownChrom
 - Read whole glossaries by file and owning section title or heading path. Preserve listed IDs for unlabeled or indistinguishable glossaries and batch selections. Never select the first match when a title or path is ambiguous.
 - Refresh saved-file snapshots on structural queries (line reads bypass parsing/cache refresh), reuse unchanged parsed records, and preserve cache locking, cancellation-aware waits, and serialized requests. Do not store full document bodies or ASTs in the persistent cache.
 - Preserve typed AND search filters, deterministic term selection, request order, deduplication of identical selections, and successful items in partial reads. Report `complete: false` with diagnostics or per-item errors when results are partial.
+- Natural-name batches share `read` / MCP `read_items`: default sections to their own body, merge overlapping saved-source ranges once at their first requested position, and preserve exact original content. Enforce the Unicode-character source budget by omitting whole merged ranges and retaining later items that fit. Report omissions as partial results; do not describe characters as model tokens. Keep legacy term/glossary ID reads compatible.
+- Resolve text-bearing fragment-only Markdown links against explicit project labels before ordinary local heading fragments. Retain ambiguity rather than choosing a duplicate global label; refresh resolved references even when parsed document records are reused.
 - Use external grep/rg/sed for source string search; do not expose a duplicate `match` command or MCP `match_text` tool. `read-lines` / `read_lines` reads selected saved source through the same serialized `IndexService` without index refresh/cache locks. Preserve root, UTF-8, size, symlink, cache/traversal exclusions and stable-read checks. `read-section --line` / MCP `line` selects the section owning an observed external-search line and retains structural refresh/hash checks.
 - Keep MCP stdout protocol-only and launch errors on stderr. Requests cannot change the server root. SDK validation errors may have text content without `structuredContent`; handle both response forms.
 - Streamable HTTP uses the same root-bound service through the SDK's public handler. Bind loopback by default; validate Host and Origin headers, require the environment-supplied Bearer token for non-loopback access, and keep tokens out of URLs and logs. Retain stdio as the default and the VS Code provider transport.
@@ -121,6 +123,7 @@ The shared preview settings are `markdownChroma.preview.root` and `markdownChrom
 ## Developer references
 
 - [MyST retrieval benchmark and token analysis](docs/benchmarks/MYSTMD-RETRIEVAL.md)
+- [MyST benchmark after batch reads: three trials per condition](docs/benchmarks/MYSTMD-BATCH-RETRIEVAL.md)
 - [VS Code Markdown Extension API](https://code.visualstudio.com/api/extension-guides/markdown-extension)
 - [VS Code MCP extension API](https://code.visualstudio.com/api/extension-guides/ai/mcp)
 - [Official TypeScript MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)

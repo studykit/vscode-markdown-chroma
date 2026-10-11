@@ -2,6 +2,8 @@
 
 Date: 2026-10-11.
 
+For the later nine-run comparison with natural-name batches and corrected label backlinks, see [the batch-read benchmark](MYSTMD-BATCH-RETRIEVAL.md). The results below describe the earlier single trial.
+
 This exploratory comparison measured Bash alone, Bash + Markdown Chroma CLI, and Bash + Markdown Chroma MCP. All three agents recovered the 59 required facts across 13 questions. Adding Chroma did not establish a token or speed advantage in this trial. Cache differences materially affected the uncached-token comparison.
 
 ## Setup
@@ -61,6 +63,8 @@ The index reported 166 diagnostics across 36 documents. Each mixed arm made six 
 
 The backlink query for `document-parts.md` omitted a referral from `website-navigation.md` through a text-bearing `#parts:site` link. Both mixed agents supplemented the result with shell searches and recovered all five referring documents. Accurate label resolution is necessary before relying on these backlinks to eliminate source verification.
 
+The follow-up implementation fixes explicit project-label resolution for these links. A pinned-corpus regression now recovers all five referring documents, including all three `website-navigation.md` references. These fixes and natural-name batch reads were added after this trial; the token results above remain measurements of the earlier behavior.
+
 The MCP arm also issued one shell search with a nonexistent filename and recovered through subsequent retrieval. Its warning and recovery were included in usage.
 
 ## Follow-up comparisons
@@ -70,3 +74,16 @@ To isolate extraction costs, hold lexical search candidates and selected source 
 Evaluate more demanding questions separately: repeated headings, global labels, definition-versus-mention selection, and multi-document evidence. Score factual coverage and source accuracy alongside tokens. A useful retrieval improvement should reduce unnecessary source reading or verification while retaining every required fact and reporting incomplete evidence.
 
 Detailed local prompts, usage events, commands, responses, and grading records are kept under the ignored `artifacts/benchmarks/20261011-mystmd-bash-hybrid` directory. This document omits machine-specific paths and session identifiers.
+
+## Fixed-selection batch regression
+
+A follow-up source-level check holds four selections constant: “Add website parts” with children, its “Share the same part across multiple sites” child, “Glossaries,” and the `glossary` definition within it. Separate reads use the same section ranges as the batch. The batch preserves every selected source exactly, merging the two overlapping pairs.
+
+| Measurement | Separate reads | Natural-name batch |
+| --- | ---: | ---: |
+| Read requests | 4 | 1 |
+| Returned source characters | 5,027 | 3,912 |
+
+The 1,115-character reduction (22.2%) comes from overlapping source. It excludes metadata, arguments, tool descriptions, and model reasoning. It is not an LLM token measurement. CLI JSON, stdio MCP, and HTTP MCP return identical concise batch data, with the same 15 MCP tools.
+
+A 106-character budget omits the entire 2,218-character website section while retaining the later 106-character glossary definition. The response explicitly reports the omission and remains partial. The corpus was already indexed; the warm refresh reparsed zero of its 89 documents. Local verification code and results are under the ignored `artifacts/benchmarks/20261011-retrieval-batch` directory.
