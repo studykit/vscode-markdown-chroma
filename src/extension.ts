@@ -6,6 +6,7 @@ import type MarkdownIt from 'markdown-it';
 import { extendObsidianMarkdown } from './markdown';
 import { extendMystMarkdown } from './myst';
 import { resolvePreviewRoot, FileVault, isWithin } from './vault';
+import { PreviewPluginManager } from './preview-plugins/manager';
 import type { PreviewHost, RenderEnvironment } from './types';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -29,6 +30,8 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!disposed) void vscode.commands.executeCommand('markdown.preview.refresh');
     }, 150);
   };
+  const plugins = new PreviewPluginManager(refreshPreviews);
+  context.subscriptions.push(plugins);
   const ensure = (file: string): Promise<FileVault> => {
     const root = rootFor(file);
     const existing = pending.get(root);
@@ -52,13 +55,17 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!vault) void ensure(file);
     return vault;
   };
-  const refresh = async () => {
+  const refresh = async (reloadPlugins = false) => {
+    if (reloadPlugins) plugins.invalidate();
     const sources = vscode.workspace.textDocuments.filter(document => document.languageId === 'markdown' && document.uri.scheme === 'file').map(document => document.uri.fsPath);
     await Promise.all(sources.map(ensure));
     await Promise.all([...vaults.values()].map(vault => vault.refresh()));
     refreshPreviews();
   };
   const host: PreviewHost = {
+    parseMystPlugins: (source, file, project) => plugins.parse(source, file, rootFor(file), project,
+      vscode.workspace.getConfiguration('markdownChroma.preview', vscode.Uri.file(file)).get<boolean>('projectPlugins', false),
+      vscode.workspace.isTrusted && !!vscode.workspace.getWorkspaceFolder(vscode.Uri.file(file))),
     resolve: (target, source) => forSource(source)?.resolve(target, source) ?? { status: 'missing' },
     read: file => {
       const vault = [...vaults.values()].filter(candidate => isWithin(candidate.root, file)).sort((a, b) => b.root.length - a.root.length)[0];
@@ -86,7 +93,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (document.uri.scheme === 'file') await ensure(document.uri.fsPath);
       await vscode.commands.executeCommand('markdown.showPreviewToSide', document.uri);
     }),
-    vscode.commands.registerCommand('obsidianMarkdown.refreshVault', refresh),
+    vscode.commands.registerCommand('obsidianMarkdown.refreshVault', () => refresh(true)),
     vscode.workspace.onDidOpenTextDocument(document => {
       if (document.languageId === 'markdown' && document.uri.scheme === 'file') void ensure(document.uri.fsPath);
     }),
@@ -96,9 +103,11 @@ export async function activate(context: vscode.ExtensionContext) {
         refreshPreviews();
       } else if (event.document.languageId === 'yaml') refreshPreviews();
     }),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => { void refresh(); }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => { plugins.invalidate(); void refresh(); }),
+    vscode.workspace.onDidGrantWorkspaceTrust(() => { plugins.invalidate(); refreshPreviews(); }),
     vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration('markdownChroma.preview')) {
+        plugins.invalidate();
         vaults.clear(); pending.clear();
         void refresh();
       }
@@ -107,7 +116,10 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   const watcher = vscode.workspace.createFileSystemWatcher('**/*');
   const changed = (uri: vscode.Uri) => {
-    if (uri.scheme !== 'file' || uri.fsPath.split(path.sep).some(segment => ['.git', '.obsidian', 'node_modules'].includes(segment))) return;
+    if (uri.scheme !== 'file' || uri.fsPath.split(path.sep).some(segment => ['.git', '.obsidian'].includes(segment))) return;
+    // Execute saved plugin modules only. Reload their entire dependency graph.
+    if (!/\.(?:md|markdown|mdown|mkd)$/i.test(uri.fsPath)) plugins.invalidate(uri.fsPath);
+    if (uri.fsPath.split(path.sep).includes('node_modules')) { refreshPreviews(); return; }
     clearTimeout(indexTimer);
     indexTimer = setTimeout(() => { if (!disposed) void refresh(); }, 300);
   };

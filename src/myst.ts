@@ -4,12 +4,7 @@ import type MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import { mystParse } from 'myst-parser';
 import { basicTransformations, glossaryTransform, abbreviationTransform, ReferenceState, enumerateTargetsTransform, resolveLinksAndCitationsTransform, resolveReferencesTransform } from 'myst-transforms';
-import { gridDirectives } from 'myst-ext-grid';
-import { cardDirective } from 'myst-ext-card';
-import { tabDirectives } from 'myst-ext-tabs';
-import { proofDirective } from 'myst-ext-proof';
-import { exerciseDirectives } from 'myst-ext-exercise';
-import { buttonRole } from 'myst-ext-button';
+import { previewMystOptions as options } from './myst-options';
 import { VFile } from 'vfile';
 import { validateNumbering } from 'myst-frontmatter';
 import { renderToString } from 'katex';
@@ -22,7 +17,6 @@ import type { PreviewHost, RenderEnvironment } from './types';
 // The official parser owns syntax. This adapter renders its AST in VS Code's
 // existing Markdown preview, without a project, server, shell or web theme.
 interface Node { type: string; children?: Node[]; [key: string]: any }
-const options = { directives: [...gridDirectives, cardDirective, ...tabDirectives, proofDirective, ...exerciseDirectives], roles: [buttonRole], extensions: { frontmatter: false, strikethrough: true } };
 const walk = (node: Node, visit: (node: Node) => void) => { visit(node); node.children?.forEach(child => walk(child as Node, visit)); };
 const text = (node: Node): string => node.value ?? node.children?.map(child => text(child as Node)).join('') ?? '';
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!));
@@ -38,7 +32,14 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
   const nativeInline = (source: string, env: RenderEnvironment) => md.renderer.renderInline(md.parseInline(source, env)[0].children ?? [], md.options, env);
   const parse = (source: string, file?: string, project: Settings = {}) => {
     const vfile = new VFile({ path: file });
-    const tree = mystParse(source, { ...options, extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile });
+    // Executable declarations come from myst.yml only. Re-discover for each
+    // included file so plugin paths and definitions stay in its own project.
+    const config = file ? mystConfiguration(host, { currentDocument: host.documentUri(file) }) : undefined;
+    const plugins = file ? host.parseMystPlugins?.(source, file, { ...project, plugins: config?.project.plugins }) : undefined;
+    const tree: ReturnType<typeof mystParse> = plugins?.tree ?? mystParse(source, { ...options, extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile });
+    const problems = [...(plugins?.errors ?? []), ...(plugins?.messages ?? []).map(message => `MyST${message.line ? ` line ${message.line}` : ''}: ${message.reason}`)];
+    if (plugins?.pending) problems.push('Loading MyST project plugins; Preview will refresh when ready.');
+    tree.children.unshift(...[...new Set(problems)].map(value => ({ type: 'previewError', value })));
     walk(tree, node => {
       if ((node.type === 'mystDirective' || node.type === 'mystRole') && node.position) for (const child of node.children ?? []) child.position ??= node.position;
       if (node.type !== 'blockquote' || !node.position) return;
@@ -172,6 +173,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       const children = () => node.children?.map(child => render(child as Node, stack)).join('') ?? '';
       const tag = (name: string, attributes = attr(node)) => `<${name}${attributes}>${children()}</${name}>`;
       if (node._obsidianSource) return nativeRender(node._obsidianSource, environment);
+      try {
       switch (node.type) {
         case 'root': return children();
         case 'text': return /\[\[|==|%%/.test(node.value ?? '') ? nativeInline(node.value, environment) : escape(node.value);
@@ -288,9 +290,13 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         case 'bibliography': return `<ol class="myst-bibliography">${[...bibliography].map(([id, entry]) => `<li id="myst-cite-${escape(id)}">${escape(entry.author?.map((author: any) => [author.given, author.family].filter(Boolean).join(' ')).join(', '))}. <em>${escape(entry.title)}</em>. ${escape(entry['container-title'])} ${escape(entry.issued?.['date-parts']?.[0]?.[0])}.</li>`).join('')}</ol>`;
         case 'iframe': return `<a class="myst-external-embed" href="${escape(safeUrl(node.src ?? ''))}">${escape(node.title ?? node.src)}</a>`;
         case 'button': return tag('a', ` class="myst-button" href="${escape(safeUrl(node.url ?? ''))}"`);
-        case 'mystDirective': case 'mystRole': case 'mystDirectiveError': case 'mystRoleError': return error(`Unsupported or invalid MyST ${node.type.includes('Role') ? 'role' : 'directive'}: ${node.name}`);
+        case 'mystDirective': case 'mystRole': case 'mystDirectiveError': case 'mystRoleError': return error(node.message ?? `Unsupported or invalid MyST ${node.type.includes('Role') ? 'role' : 'directive'}: ${node.name}`);
         case 'previewError': return error(node.value);
-        default: return children() || (node.value ? escape(node.value) : '');
+        default: return (node._projectPlugin ? error(`MyST plugin ${node._projectPlugin}: unsupported output node ${node.type}.`) : '') + (children() || (node.value ? escape(node.value) : ''));
+      }
+      } catch (failure) {
+        if (!node._projectPlugin) throw failure;
+        return error(`MyST plugin ${node._projectPlugin}: cannot render ${node.type}: ${failure instanceof Error ? failure.message : String(failure)}`);
       }
     };
     // Source markers support the built-in editor/preview scroll synchronization.

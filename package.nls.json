@@ -1,0 +1,3 @@
+{
+  "workspaceTrustDescription": "Ordinary preview rendering works in Restricted Mode. Executing MyST project plugins requires workspace trust and explicit activation in settings."
+}

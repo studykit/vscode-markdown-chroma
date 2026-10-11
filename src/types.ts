@@ -1,3 +1,5 @@
+import type { PluginParseResult } from './preview-plugins/manager';
+
 export interface PreviewSettings {
   maxEmbedDepth: number;
 }
@@ -29,6 +31,7 @@ export type Resolution =
   | { status: 'missing' | 'ambiguous' | 'outside'; candidates?: string[] };
 
 export interface PreviewHost {
+  parseMystPlugins?(source: string, file: string, project: Record<string, any>): PluginParseResult | undefined;
   resolve(target: string, source?: string): Resolution;
   read(file: string): string | undefined;
   documentUri(file: string): DocumentUri;

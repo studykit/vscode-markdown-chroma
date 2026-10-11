@@ -94,6 +94,7 @@ Unsaved changes in open notes are included in embeds. File creation, modificatio
 | --- | --- | --- |
 | `markdownChroma.preview.root` | `""` | Document root for preview file lookup; empty uses the workspace folder or a standalone document's containing folder |
 | `markdownChroma.preview.maxEmbedDepth` | `5` | Maximum nesting depth for note embeds, MyST includes, and MyST embeds; range 1–20 |
+| `markdownChroma.preview.projectPlugins` | `false` | Execute local JavaScript MyST directive and role plugins in a trusted workspace |
 | `markdown.preview.frontMatter` | `"table"` | Built-in VS Code setting: `"table"`, `"codeBlock"`, or `"hide"` |
 | `markdown.preview.breaks` | `false` | Built-in VS Code setting: display single line breaks when `true` |
 
@@ -119,7 +120,63 @@ Render MyST directly in the built-in Markdown Preview. If a `myst.yml` file is p
 
 Examples: [overview](../examples/myst/index.md), [layouts](../examples/myst/layout.md), [syntax](../examples/myst/syntax.md), and [glossaries](../examples/myst/glossary.md). The glossary example covers multiple glossaries, `{term}` references, custom display text, and references placed before definitions. See the official [MyST authoring guide](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), and [figures](https://mystmd.org/guide/figures) documentation for syntax.
 
-The preview displays local files without executing code. Automatic DOI or external project lookup, user project plugins, Jupyter execution, `.tex` conversion, PDF/EPS/TIFF image conversion, and PDF/Word publishing are outside its scope. External iframes appear as links under the built-in Preview's security policy. Invalid or unsupported directives display an error message. Frontmatter and Obsidian footnotes retain their existing presentation.
+By default, the preview displays local files without executing project code. Automatic DOI or external project lookup, Jupyter execution, `.tex` conversion, PDF/EPS/TIFF image conversion, and PDF/Word publishing are outside its scope. External iframes appear as links under the built-in Preview's security policy. Invalid or unsupported directives display an error message. Frontmatter and Obsidian footnotes retain their existing presentation.
+
+### Project-defined MyST plugins
+
+Local JavaScript plugins can generate Preview content through MyST's public directive and role APIs. Open the project folder, trust the workspace in VS Code, and enable **Markdown Chroma: Preview: Project Plugins** in Settings:
+
+```json
+{
+  "markdownChroma.preview.projectPlugins": true
+}
+```
+
+Register an ESM `.js` or `.mjs` plugin in `myst.yml`:
+
+```yaml
+version: 1
+project:
+  plugins:
+    - ./preview-plugin.mjs
+```
+
+```javascript
+// preview-plugin.mjs
+import { u } from 'unist-builder';
+
+export default {
+  directives: [{
+    name: 'greeting',
+    arg: { type: String, required: true },
+    run(data) {
+      return [u('paragraph', [u('text', `Hello, ${data.arg}!`)])];
+    }
+  }]
+};
+```
+
+```markdown
+:::{greeting} reader
+:::
+```
+
+This displays **Hello, reader!**. Arguments, options, parsed body content, validation callbacks, and declared aliases follow the bundled MyST parser's API. Plugin paths are relative to the configuration file that declares them, including local `extends`. Entries of the form `{ type: javascript, path: ./preview-plugin.mjs }` also work. Plugins must stay inside the preview root. Only configuration declarations select executable plugins; Markdown frontmatter cannot add or replace them.
+
+**Enable this setting only for projects whose code you trust.** Plugins have ordinary Node.js file and network access. A Worker provides timeout and crash isolation, not a security sandbox. Restricted Mode and standalone files without an open workspace never execute plugins. Ordinary Markdown, Obsidian syntax, and bundled MyST features remain available with the setting off.
+
+Preview supplies its pinned versions of `myst-parser`, `myst-directives`, `myst-roles`, `myst-common`, `myst-transforms`, `myst-frontmatter`, bundled `myst-ext-*` packages, `unist-builder`, and `vfile`. Exact ESM package imports use Chroma's versions even when the project has other versions installed; package subpaths and CommonJS `require()` do not use this bridge. Other packages use normal Node resolution and must already be installed inside the preview root; no packages or remote modules are downloaded.
+
+The initial compatibility limits are:
+
+- ESM JavaScript plugins with a default-exported plugin object and synchronous directive/role callbacks. The VS Code host must expose Node.js 20.6 or later. Module loading is asynchronous; the Preview refreshes when generated content is ready.
+- Plugin transforms, asynchronous callbacks, executable/Python plugins, and custom HTML/node renderers are unsupported. Returning a node the existing renderer does not support displays an error while preserving its readable children.
+- Generated content uses the existing renderer, including headings, paragraphs, lists, definition lists, images, code, math, and in-document references. Existing built-in names take precedence; duplicate project names or aliases produce an error.
+- Loading and each document parse have a two-second deadline. Local modules and input documents have a 2 MiB limit; results have a 4 MiB limit, with bounded node depth and count. Errors identify the affected plugin where possible and leave the rest of the document readable.
+
+Save plugin files to reload them. Plugin/configuration changes restart the project's module graph, including imported helpers and installed dependencies. Unsaved Markdown is previewed, but unsaved plugin code is not executed. **Markdown Chroma: Refresh Vault Index** also reloads plugins. Definitions and cached generated content are kept separate by preview root and registered plugin set.
+
+This setting affects Preview only. CLI and MCP continue to inspect plugin declarations statically and read original saved Markdown without executing plugins. See [index plugin behavior](CLI.md#myst-project-plugins).
 
 ## Code syntax highlighting
 

@@ -7,6 +7,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { JSDOM } from 'jsdom';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
+import { verifyPreviewPlugins } from './preview-plugins-integration';
 
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension('studykit.markdown-chroma');
@@ -358,6 +359,7 @@ export async function run(): Promise<void> {
     await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
   }
   const myst = await vscode.workspace.openTextDocument(path.join(mystRoot, 'syntax.md'));
+  await verifyPreviewPlugins(extension.extensionPath, mystRoot);
   await vscode.window.showTextDocument(myst);
   await vscode.commands.executeCommand('markdown.showPreviewToSide', myst.uri);
   assert.ok(hasPreview());

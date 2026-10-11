@@ -17,6 +17,8 @@ const previewBuild = { entryPoints: ['media/preview.js'], outfile: 'dist/preview
 const tests = (await readdir('test')).filter(name => name.endsWith('.test.ts'));
 const builds = [
   { entryPoints: ['src/extension.ts'], outfile: 'dist/extension.cjs' },
+  { entryPoints: ['src/preview-plugins/worker.ts'], outfile: 'dist/preview-plugin-worker.cjs' },
+  { entryPoints: ['src/preview-plugins/loader.ts'], outfile: 'dist/preview-plugin-loader.cjs' },
   { entryPoints: ['src/mcp.ts'], outfile: 'dist/mcp.cjs' },
   { entryPoints: ['src/cli.ts'], outfile: 'dist/cli.cjs' },
   { entryPoints: ['src/index/index.ts'], outfile: 'dist/index.cjs' },

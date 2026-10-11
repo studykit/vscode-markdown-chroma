@@ -58,6 +58,8 @@ See equation {eq}`energy`.
 
 See the [MyST authoring guide](https://mystmd.org/guide) for the syntax.
 
+Projects can also enable local JavaScript directive and role plugins in a trusted workspace. See [project plugin setup and limits](docs/PREVIEW.md#project-defined-myst-plugins).
+
 ## Make the preview yours
 
 Use VS Code's normal Markdown preview settings and your preferred theme. For a deeper look at links, media, callout colors and icons, frontmatter, and MyST options, see the [preview guide](docs/PREVIEW.md).
@@ -66,6 +68,7 @@ Use VS Code's normal Markdown preview settings and your preferred theme. For a d
 | --- | --- | --- |
 | `markdownChroma.preview.root` | `""` | Choose the folder used to resolve preview links and local includes; empty uses the workspace folder |
 | `markdownChroma.preview.maxEmbedDepth` | `5` | Limit nested note embeds and MyST includes or embeds |
+| `markdownChroma.preview.projectPlugins` | `false` | Enable local MyST project plugins in a trusted workspace |
 | `markdown.preview.frontMatter` | `"table"` | Show frontmatter as a table, code block, or hide it |
 | `markdown.preview.breaks` | `false` | Display single line breaks in the preview |
 
