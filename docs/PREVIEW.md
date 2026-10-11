@@ -184,7 +184,7 @@ If a plugin fails:
 
 **Markdown Chroma: Refresh Vault Index** remains available and reloads plugins for all preview roots. Reload Project Plugins requires a document whose plugins have already been loaded in Preview. Reloading itself does not save unsaved plugin edits.
 
-This setting affects Preview only. CLI and MCP continue to inspect plugin declarations statically and read original saved Markdown without executing plugins. See [index plugin behavior](CLI.md#myst-project-plugins).
+This setting affects Preview only. CLI and MCP inspect plugin declarations statically and read original saved Markdown without executing plugins. Their separate [explicit expansion operation](CLI.md#expand-a-directive-or-document-embed) can execute registered directives when its own capability is enabled.
 
 ## Code syntax highlighting
 

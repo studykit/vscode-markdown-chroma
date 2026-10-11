@@ -15,6 +15,7 @@ Usage: markdown-chroma <command> [file or term names] [options]
   sections <file>            List titles as an outline; --json returns a title tree
   read-section <file>        --title OR --heading-path OR --id OR --label OR --line
   read-lines <file>          Read source --start line [--end line]; default 20 lines
+  expand-directive <file>    Expand one observed opening --line; --max-depth/--max-chars
   read-frontmatter <file>    Read original YAML frontmatter, including delimiters
   tables [file]              List tables [--section section-id with file]
   images [file]              List image occurrences [--section section-id with file]
@@ -28,6 +29,7 @@ Usage: markdown-chroma <command> [file or term names] [options]
   read --select <JSON>       Read sections/terms by titles/names; --max-chars budget
 
 Global: --root <directory> (default: cwd), --cache-dir <directory>, --help
+Expansion: --allow-project-plugins explicitly enables registered JavaScript code
 Output: text by default; --json for concise retrieval JSON; --debug for full records
 Reads:  --no-children for read-section's own body
         --source-hash <hash> to verify a saved read (hash from sections --debug)
@@ -55,6 +57,7 @@ Examples:
   markdown-chroma read --select '[{"kind":"section","file":"guide.md","title":"Setup"},{"kind":"term","name":"AST"}]'
 `;
 const commands: Record<string, string[]> = {
+  'expand-directive': ['line', 'max-depth', 'max-chars', 'source-hash', 'allow-project-plugins'],
   index: ['rebuild'], notes: ['unresolved'], search: ['tag', 'where', 'has-property', 'exact-tag'],
   'read-frontmatter': ['source-hash'],
   'read-lines': ['start', 'end', 'source-hash'],
@@ -62,7 +65,7 @@ const commands: Record<string, string[]> = {
   tables: ['section'], images: ['section'], glossaries: [], terms: ['glossary', 'name'],
   'read-term': ['id', 'file', 'source-hash'], 'read-glossary': ['id', 'title', 'heading-path'], read: ['id', 'select', 'max-chars'],
 };
-const flags = new Set(['help', 'json', 'debug', 'rebuild', 'unresolved', 'exact-tag', 'no-children']);
+const flags = new Set(['help', 'json', 'debug', 'rebuild', 'unresolved', 'exact-tag', 'no-children', 'allow-project-plugins']);
 const repeated = new Set(['id', 'tag', 'has-property']);
 interface Arguments { command: string; positional: string[]; values: Map<string, string[]> }
 function parseArguments(argv: string[]): Arguments {
@@ -88,7 +91,7 @@ function parseArguments(argv: string[]): Arguments {
     values.set(name, [...(values.get(name) ?? []), value]);
   }
   const has = (name: string) => values.has(name);
-  const oneFile = ['backlinks', 'sections', 'read-section', 'read-frontmatter', 'read-lines'].includes(command);
+  const oneFile = ['backlinks', 'sections', 'read-section', 'read-frontmatter', 'read-lines', 'expand-directive'].includes(command);
   const optionalFile = ['tables', 'images', 'glossaries', 'terms', 'read-glossary'].includes(command);
   if ((oneFile && positional.length !== 1) || (optionalFile && positional.length > 1) || (!oneFile && !optionalFile && command !== 'read-term' && positional.length)) throw new IndexError('invalidArguments', `Invalid positional arguments for ${command}. Use --help.`);
   if (command === 'read-section' && (['id', 'label', 'title', 'heading-path', 'line'].filter(has).length !== 1 || (values.get('id')?.length ?? 0) > 1)) throw new IndexError('invalidArguments', 'read-section requires exactly one --title, --heading-path, --id, --label or --line.');
@@ -119,14 +122,14 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
       if (!where || Array.isArray(where) || typeof where !== 'object' || Object.values(where).some(v => v !== null && !['string', 'number', 'boolean'].includes(typeof v))) throw new IndexError('invalidArguments', '--where values must be strings, numbers, booleans or null.');
     }
     const queryArguments: Record<string, unknown> = {};
-    const mapping: Record<string, string> = { tag: 'tags', 'has-property': 'hasProperty', 'exact-tag': 'exactTag', 'source-hash': 'sourceHash', 'heading-path': 'headingPath', start: 'startLine', end: 'endLine', select: 'selections', 'max-chars': 'maxChars' };
+    const mapping: Record<string, string> = { tag: 'tags', 'has-property': 'hasProperty', 'exact-tag': 'exactTag', 'source-hash': 'sourceHash', 'heading-path': 'headingPath', start: 'startLine', end: 'endLine', select: 'selections', 'max-chars': 'maxChars', 'max-depth': 'maxDepth' };
     for (const [name, list] of values) {
-      if (['root', 'cache-dir', 'json', 'debug', 'where', 'no-children'].includes(name)) continue;
+      if (['root', 'cache-dir', 'json', 'debug', 'where', 'no-children', 'allow-project-plugins'].includes(name)) continue;
       const key = name === 'id' ? (command === 'read-section' ? 'id' : 'ids') : mapping[name] ?? name;
       if (name === 'heading-path' || name === 'select') {
         try { queryArguments[key] = JSON.parse(list[0]); }
         catch { throw new IndexError('invalidArguments', `--${name} must be a JSON array.`); }
-      } else if (['line', 'start', 'end', 'max-chars'].includes(name)) {
+      } else if (['line', 'start', 'end', 'max-chars', 'max-depth'].includes(name)) {
         if (!/^\d+$/.test(list[0])) throw new IndexError('invalidArguments', `--${name} requires an integer.`);
         queryArguments[key] = Number(list[0]);
       } else queryArguments[key] = repeated.has(name) && key !== 'id' ? list : flags.has(name) ? true : list[0];
@@ -134,7 +137,7 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
     if (has('where')) queryArguments.where = where;
     if (has('no-children')) queryArguments.includeChildren = false;
     if (positional.length) queryArguments[command === 'read-term' ? 'names' : 'file'] = command === 'read-term' ? positional : positional[0];
-    const service = new IndexService(get('root'), get('cache-dir'));
+    const service = new IndexService(get('root'), get('cache-dir'), { allowProjectPlugins: has('allow-project-plugins') });
     const query = { command: command as QueryCommand, arguments: queryArguments } as IndexQuery;
     const result = await service.execute(query), status = retrievalStatus(result, query);
     if (has('debug')) for (const diagnostic of result.diagnostics ?? []) io.stderr(`${diagnostic.file ?? '.'}${diagnostic.line ? ':' + diagnostic.line : ''}: ${diagnostic.code}: ${diagnostic.message}\n`);

@@ -24,7 +24,7 @@ export function registerIndexMcpProvider(context: vscode.ExtensionContext): vsco
         const root = fs.realpathSync(path.resolve(workspaceRoot, configured));
         if (!isWithin(workspaceRoot, root) || !fs.statSync(root).isDirectory()) throw new Error('MCP root must be a directory inside this workspace folder.');
         const server = new vscode.McpStdioServerDefinition(`Markdown Chroma: ${folder.name}`,
-          process.execPath, [context.asAbsolutePath('dist/mcp.cjs'), '--root', root],
+          process.execPath, [context.asAbsolutePath('dist/mcp.cjs'), '--root', root, ...(config.get<boolean>('projectPlugins', false) ? ['--allow-project-plugins'] : [])],
           { ELECTRON_RUN_AS_NODE: '1' }, context.extension.packageJSON.version);
         server.cwd = vscode.Uri.file(root);
         servers.push(server);

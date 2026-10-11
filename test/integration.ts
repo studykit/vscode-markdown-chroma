@@ -28,7 +28,7 @@ export async function run(): Promise<void> {
     cwd: definition.cwd?.fsPath, env: definition.env as Record<string, string>, stderr: 'pipe' });
   try {
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 15);
+    assert.equal((await client.listTools()).tools.length, 16);
     const result = await client.callTool({ name: 'list_sections', arguments: { file: 'Showcase.md' } });
     const data = result.structuredContent as { file: string; sections: unknown[] };
     assert.equal(data.file, 'Showcase.md');
@@ -46,13 +46,33 @@ export async function run(): Promise<void> {
     assert.equal(batchResult.isError, undefined); assert.equal(batch.items.length, 1);
     assert.match(batch.items[0].content, /Markdown Chroma/);
     assert.equal(batch.items[0].sourceHash, undefined); assert.equal(batch.items[0].startLine, undefined);
+    const embedLine = source.split('\n').findIndex(text => text === '![[notes/Linked note#Implementation]]') + 1;
+    const expanded = (await client.callTool({ name: 'expand_directive', arguments: { file: 'Showcase.md', line: embedLine } })).structuredContent as any;
+    assert.equal(expanded.complete, true); assert.match(expanded.content, /Implementation/); assert.ok(!expanded.content.includes('![[notes/Linked note#Implementation]]'));
   } finally { await client.close(); }
   const configuration = vscode.workspace.getConfiguration('markdownChroma.mcp', vscode.workspace.workspaceFolders![0].uri);
   const initialEnabled = configuration.inspect('enabled')?.workspaceValue;
   const initialRoot = configuration.inspect('root')?.workspaceValue;
+  const initialPlugins = configuration.inspect('projectPlugins')?.workspaceValue;
   let changes = 0;
   const listener = provider.onDidChangeMcpServerDefinitions!(() => { changes++; });
   try {
+    await configuration.update('projectPlugins', true, vscode.ConfigurationTarget.Workspace);
+    const enabledDefinition = (await provider.provideMcpServerDefinitions(tokenSource.token))![0];
+    assert.ok(enabledDefinition.args.includes('--allow-project-plugins'));
+    assert.equal(await provider.resolveMcpServerDefinition!(definition, tokenSource.token), undefined);
+    const scratch = await fs.mkdtemp(path.join(root, 'chroma-expansion-'));
+    const pluginClient = new Client({ name: 'vscode-expansion-integration', version: '1' });
+    try {
+      await fs.writeFile(path.join(scratch, 'myst.yml'), 'project:\n  plugins: [./plugin.mjs]\n');
+      await fs.writeFile(path.join(scratch, 'plugin.mjs'), "import {u} from 'unist-builder'; export default {directives:[{name:'host-info',alias:['host-info-alias'],run(){return [u('paragraph',[u('text','Host-generated information')])];}}]};");
+      const source = ':::{host-info-alias}\n:::\n';
+      await fs.writeFile(path.join(scratch, 'source.md'), source);
+      await pluginClient.connect(new StdioClientTransport({ command: enabledDefinition.command, args: enabledDefinition.args, cwd: enabledDefinition.cwd?.fsPath, env: enabledDefinition.env as Record<string,string>, stderr: 'pipe' }));
+      const result = await pluginClient.callTool({ name: 'expand_directive', arguments: { file: path.basename(scratch) + '/source.md', line: source.split('\n').findIndex(text => text.includes('{host-info-alias}')) + 1 } });
+      assert.equal(result.isError, undefined, JSON.stringify(result.structuredContent)); assert.match((result.structuredContent as any).content, /Host-generated information/);
+    } finally { await pluginClient.close(); await fs.rm(scratch, { recursive: true, force: true }); }
+    await configuration.update('projectPlugins', false, vscode.ConfigurationTarget.Workspace);
     await configuration.update('enabled', false, vscode.ConfigurationTarget.Workspace);
     assert.equal((await provider.provideMcpServerDefinitions(tokenSource.token))?.length, 0);
     assert.equal(await provider.resolveMcpServerDefinition!(definition, tokenSource.token), undefined);
@@ -65,9 +85,10 @@ export async function run(): Promise<void> {
   } finally {
     await configuration.update('enabled', initialEnabled, vscode.ConfigurationTarget.Workspace);
     await configuration.update('root', initialRoot, vscode.ConfigurationTarget.Workspace);
+    await configuration.update('projectPlugins', initialPlugins, vscode.ConfigurationTarget.Workspace);
     listener.dispose(); tokenSource.dispose();
   }
-  console.log('PASS: native MCP provider launches bundled stdio server with host runtime, exposes 15 tools, reads observed lines and deduplicated batches, and enforces workspace settings');
+  console.log('PASS: native MCP provider exposes 16 tools, expands heading embeds and an opt-in custom directive alias through the host runtime, and rechecks launch settings');
   const showcase = await vscode.workspace.openTextDocument(path.join(root, 'Showcase.md'));
   await vscode.window.showTextDocument(showcase);
   await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');

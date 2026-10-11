@@ -76,7 +76,7 @@ For project plugin errors, run **Markdown Chroma: Show Project Plugin Logs**. Af
 
 ## CLI and MCP guides
 
-- [CLI: installation, search, section reads, and automatic indexing](docs/CLI.md)
+- [CLI: search, source reads, selective directive expansion, and automatic indexing](docs/CLI.md)
 - [MCP server: VS Code setup, stdio and URL connections, tools, and shared API](docs/MCP.md)
 
 ## What to expect

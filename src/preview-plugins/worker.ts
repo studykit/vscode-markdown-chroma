@@ -18,6 +18,7 @@ import * as builder from 'unist-builder';
 import * as vfiles from 'vfile';
 import { previewMystOptions } from '../myst-options';
 import type { PluginDiagnostic } from './events';
+import { parseExpansion } from './expansion-parser';
 
 const modules: Record<string, any> = {
   'myst-parser': parser, 'myst-directives': directives, 'myst-roles': roles,
@@ -33,7 +34,7 @@ const bridges = Object.fromEntries(Object.entries(modules).map(([name, module]) 
     (Object.hasOwn(module, 'default') ? '\nexport default module.default;' : '');
   return [name, `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`];
 }));
-if (typeof register !== 'function') throw new Error('MyST project plugins require a VS Code host with Node.js 20.6 or later.');
+if (typeof register !== 'function') throw new Error('MyST project plugins require Node.js 20.6 or later.');
 register(pathToFileURL(path.join(__dirname, 'preview-plugin-loader.cjs')), { data: { root: workerData.root, bridges } });
 
 const errors: string[] = [];
@@ -120,11 +121,11 @@ async function start() {
     } catch (error) { loadingError(plugin.label, error); }
   }
   parentPort!.postMessage({ ready: true, errors, diagnostics: loadingDiagnostics });
-  parentPort!.on('message', ({ id, source, file, settings }) => {
+  parentPort!.on('message', ({ id, source, file, settings, maxDepth }) => {
     requestId = id; diagnostics = [];
     try {
       const vfile = new vfiles.VFile({ path: file });
-      const tree = parser.mystParse(source, { ...previewMystOptions,
+      const tree = workerData.expansion ? parseExpansion(source, vfile, pluginDirectives, pluginRoles, settings, maxDepth) : parser.mystParse(source, { ...previewMystOptions,
         directives: [...previewMystOptions.directives, ...pluginDirectives], roles: [...previewMystOptions.roles, ...pluginRoles],
         extensions: { ...previewMystOptions.extensions, math: settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile });
       const messages = vfile.messages.map(item => ({ reason: item.reason, line: item.line, column: item.column, fatal: item.fatal }));

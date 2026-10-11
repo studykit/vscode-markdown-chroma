@@ -4,6 +4,7 @@ import { IndexService, querySchemas, errorRecord, type IndexQuery, type QueryCom
 import { presentResult, presentError } from '../index/presentation';
 
 export const mcpTools = [
+  ['expand_directive', 'expand-directive', 'Expand one directive or Obsidian document embed at an observed opening line. First read original source, then expand only if its content is needed. maxDepth defaults to 1 (range 1–10), maxChars to 12000 Unicode characters. Includes/embeds read local saved content; custom JavaScript requires server-launch opt-in. Requests cannot enable execution. Results are readable Markdown, with source context and partial-result issues.'],
   ['index_documents', 'index', 'Refresh available saved documents and return their count. Source files are never changed.'],
   ['list_notes', 'notes', 'List document files and titles. unresolved selects notes with unresolved references.'],
   ['search_notes', 'search', 'Search tags and typed frontmatter properties with AND semantics. Tags include descendants unless exactTag is true; where matches scalars or array members.'],
@@ -29,7 +30,8 @@ export function createMarkdownMcpServer(service: IndexService) {
     server.registerTool(name, {
       description, inputSchema: querySchemas[command],
       outputSchema: z.object({ complete: z.boolean() }).catchall(z.unknown()),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: command === 'expand-directive' ? { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }
+        : { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async (args: unknown, context: ServerContext) => {
       let result: Record<string, unknown> & { complete: boolean };
       try {

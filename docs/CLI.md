@@ -84,6 +84,33 @@ Section reads include child sections by default. Add `--no-children` for the sel
 
 `sections ... --json` returns a title tree. For troubleshooting, `--debug` returns detailed section records, including IDs, labels, line ranges, and `sourceHash`. Pass that hash to `read-section ... --source-hash '<listed-hash>'` when the read must match the previous listing. A titleless preamble is shown as `[preamble]` and can be read with `--id preamble`; an empty document produces no outline.
 
+## Expand a directive or document embed
+
+Read the original source first. When an include, embed, or custom directive contains information needed for your answer, request that occurrence's expanded content:
+
+```sh
+rg -n 'include|embed|demo:greeting' ./notes/guide.md
+markdown-chroma expand-directive guide.md --line 42 --root ./notes
+```
+
+Use the actual opening line reported by your source read or search; `42` is illustrative. Selection does not use a guessed section position or accept replacement Markdown. Multiple embeds on one line are ambiguous. Directives inside code fences, inline code, comments, or frontmatter are not selected.
+
+Local MyST `include`, `literalinclude`, and `embed`, and Obsidian document/heading embeds read saved targets inside the root. Include line/marker filters are applied; literal includes return fenced code. MyST labels can select headings or indexed content blocks. Missing or duplicate targets are reported rather than chosen silently.
+
+Custom JavaScript directives require explicit permission for that CLI invocation:
+
+```sh
+markdown-chroma expand-directive guide.md --line 42 --allow-project-plugins --root ./notes
+```
+
+Only local ESM plugins registered in `myst.yml`/`myst.yaml`, including local `extends`, are loaded. Page frontmatter cannot register executable plugins. Names, aliases, arguments, option aliases, and synchronous callbacks follow the supported [Preview plugin API](PREVIEW.md#project-defined-myst-plugins). Only the selected occurrence and permitted nested callbacks run; other occurrences in the document are excluded. Loading a module still executes its initialization code. Plugins have ordinary Node file/network access; workers bound time and crashes, not permissions. Custom execution requires Node.js 20.6 or later.
+
+`--max-depth` defaults to `1` (range `1`–`10`): expand the selected occurrence and retain further nested syntax. Increase it to expand nested content. Cycles and more than 32 source occurrences are stopped. `--max-chars` defaults to `12000` Unicode characters (maximum `200000`); truncated results are partial. A plugin load/parse has a two-second deadline and the existing memory/AST/result limits. Unsupported generated nodes preserve readable children with an issue. Failures retain useful content or the selected original syntax.
+
+Default output is readable Markdown. `--json` returns `complete`, source file/line, directive name, content, contributing sources, and any issues; it matches MCP. `--debug` additionally retains source hashes/ranges, diagnostics and bounded worker logs. An optional `--source-hash` rejects a source changed since a debug read. Results come from current saved files and fresh plugin workers, so saved helpers and local data changes are reflected without a Preview session.
+
+Expansion does not write generated content into the persistent index. Ordinary indexing, watching, and `read` operations never execute plugins or expand references. Remote content, notebook outputs, Obsidian block IDs, Python/executable plugins, transforms, asynchronous callbacks, and standalone custom-role expansion are outside this version.
+
 ## Explore tables, images, and terms
 
 ```sh
@@ -182,6 +209,8 @@ Local plugins registered in `project.plugins` in `myst.yml` or `myst.yaml` are i
 Confirmed names do not produce unknown role/directive errors. Unknown names and ordinary MyST option errors still produce diagnostics. Remote plugins, other executables, imported or computed specifications, and unreadable files cannot be inspected; registering a path alone does not confirm its names. Custom plugin options and callback behavior are not validated.
 
 Plugins can generate headings, terms, images, or references that are absent from saved Markdown. Structural lists, searches, and backlinks report `complete: false` with a short explanation when plugin output may affect them. Explicit source reads still return the original Markdown and ignore this generation limitation; name-only term reads retain project-wide completeness. Configuration or inspection failures remain relevant. `--debug` distinguishes `pluginContentNotIndexed`, `pluginDefinitionsUnavailable`, and actual `mystSyntax` diagnostics.
+
+Use [explicit expansion](#expand-a-directive-or-document-embed) to read generated content at a saved occurrence. This is separate from static indexing and source reads.
 
 ## Cache and limits
 

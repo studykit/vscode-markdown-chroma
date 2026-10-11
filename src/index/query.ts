@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 import { termIdentifier } from './parser';
 import { MarkdownIndex, unresolved } from './project';
 import { readBatch } from './batch';
+import { expandDirective, type ExpansionOptions } from './expansion';
 import { IndexError, errorRecord, SCHEMA_VERSION, normalizeTag, type Diagnostic, type Glossary, type Term } from './types';
 export { errorRecord } from './types';
 
@@ -19,6 +20,7 @@ const selection = z.union([
   z.strictObject({ kind: z.literal('term'), name: text, ...scope, sourceHash: text.optional() }),
 ]);
 export const querySchemas = {
+  'expand-directive': z.strictObject({ file, line: z.number().int().min(1).max(1000000), maxChars: z.number().int().min(1).max(200000).optional(), maxDepth: z.number().int().min(1).max(10).optional(), sourceHash: text.optional() }),
   index: z.strictObject({ rebuild: z.boolean().optional() }),
   notes: z.strictObject({ unresolved: z.boolean().optional() }),
   search: z.strictObject({ tags: z.array(text).min(1).optional(), exactTag: z.boolean().optional(),
@@ -52,13 +54,13 @@ export type QueryArguments<C extends QueryCommand> = z.infer<(typeof querySchema
 export type IndexQuery = { [C in QueryCommand]: { command: C; arguments: QueryArguments<C> } }[QueryCommand];
 export type ReadItem = ((Term | Glossary) & { kind: 'term' | 'glossary'; status: 'ok'; content: string })
   | { selector: string; status: 'error'; error: ReturnType<typeof errorRecord> };
-export type QueryResult = Awaited<ReturnType<typeof executeQuery>>;
+export type QueryResult = Awaited<ReturnType<typeof executeQuery>> | Awaited<ReturnType<typeof expandDirective>>;
 
 /** A root-bound service. Requests serialize so each reads one coherent, refreshed snapshot. */
 export class IndexService {
   private readonly index: MarkdownIndex;
   private pending: Promise<unknown> = Promise.resolve();
-  constructor(root?: string, cacheDirectory?: string) { this.index = new MarkdownIndex(root, cacheDirectory); }
+  constructor(root?: string, cacheDirectory?: string, private readonly expansionOptions: ExpansionOptions = {}) { this.index = new MarkdownIndex(root, cacheDirectory); }
   get root() { return this.index.root; }
   get cacheFile() { return this.index.cacheFile; }
   execute(query: IndexQuery, options: { signal?: AbortSignal } = {}): Promise<QueryResult> {
@@ -72,6 +74,7 @@ export class IndexService {
       if (validated.command !== 'read-lines')
         await this.index.refresh(validated.command === 'index' && !!validated.arguments.rebuild, options.signal);
       options.signal?.throwIfAborted();
+      if (validated.command === 'expand-directive') return expandDirective(this.index, validated.arguments, this.expansionOptions, options.signal);
       return executeQuery(this.index, validated);
     });
     this.pending = operation.catch(() => undefined);
@@ -80,6 +83,7 @@ export class IndexService {
 }
 
 function executeQuery(index: MarkdownIndex, query: IndexQuery) {
+  if (query.command === 'expand-directive') throw new IndexError('internalError', 'Expansion must use the asynchronous service.');
   if (query.command === 'read-lines') return { schemaVersion: SCHEMA_VERSION, complete: true, diagnostics: [] as Diagnostic[], ...index.readLines(query.arguments) };
   const envelope = <T extends object>(result: T, complete = index.complete): T & { schemaVersion: number; complete: boolean; diagnostics?: Diagnostic[] } =>
     ({ schemaVersion: SCHEMA_VERSION, complete, ...result, ...(index.diagnostics.length ? { diagnostics: index.diagnostics } : {}) });

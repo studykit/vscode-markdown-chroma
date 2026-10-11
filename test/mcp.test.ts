@@ -59,7 +59,7 @@ test('shared queries preserve CLI results, validate selectors and recover after 
   } finally { await f.cleanup(); }
 });
 
-test('stdio MCP discovers and executes all 15 tools with API parity, partial reads and fresh snapshots', { timeout: 20000 }, async () => {
+test('stdio MCP discovers retrieval and expansion tools with API parity, partial reads and fresh snapshots', { timeout: 20000 }, async () => {
   const f = await fixture();
   const client = new Client({ name: 'chroma-test', version: '1.0.0' });
   const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve('dist/mcp.cjs'), '--root', f.root, '--cache-dir', f.cache], stderr: 'pipe' });
@@ -69,7 +69,7 @@ test('stdio MCP discovers and executes all 15 tools with API parity, partial rea
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map(tool => tool.name).sort(), mcpTools.map(([name]) => name).sort());
     assert.ok(!tools.some(tool => tool.name === 'match_text'));
-    assert.ok(tools.every(tool => tool.annotations?.readOnlyHint && tool.inputSchema.additionalProperties === false));
+    assert.ok(tools.every(tool => (tool.name === 'expand_directive' ? tool.annotations?.readOnlyHint === false : tool.annotations?.readOnlyHint) && tool.inputSchema.additionalProperties === false));
     const call = async (name: string, args: Record<string, unknown> = {}) => {
       const result = await client.callTool({ name, arguments: args });
       const text = result.content[0]; assert.equal(text.type, 'text');

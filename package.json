@@ -74,7 +74,8 @@
       "supported": "limited",
       "description": "%workspaceTrustDescription%",
       "restrictedConfigurations": [
-        "markdownChroma.preview.projectPlugins"
+        "markdownChroma.preview.projectPlugins",
+        "markdownChroma.mcp.projectPlugins"
       ]
     }
   },
@@ -143,6 +144,12 @@
           "default": "",
           "scope": "resource",
           "description": "MCP root relative to this workspace folder, or an absolute directory inside it. Empty uses the workspace folder. Does not use .obsidian configuration."
+        },
+        "markdownChroma.mcp.projectPlugins": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Allow registered local JavaScript plugins in explicit MCP directive expansion calls. Requires a trusted workspace and a server restart. Plugins have Node.js file and network access. Indexing and ordinary reads never execute them."
         }
       }
     },

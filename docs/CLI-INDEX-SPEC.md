@@ -8,6 +8,7 @@ Status: specification for the implemented CLI v1 behavior. Default CLI text, CLI
 
 - Provide the CLI first. The [MCP guide](MCP.md) describes the shared query API, MCP servers, and VS Code MCP provider integration. A separate query UI is future work.
 - Provide tag and property searches, backlink indexing, and disk persistence.
+- Offer explicit saved-source expansion after a read, separately from static indexing and ordinary source retrieval.
 - Use the same core for CLI `watch` and MCP background watchers to detect saved-file changes and invoke the existing incremental refresh.
 - Keep default CLI text, CLI `--json`, and MCP responses focused on finding, selecting, and reading content. Retain full index records in the Node API and explicit CLI `--debug` output.
 - List section titles as an outline by default and extract selected sections by title or full heading path. Read term definitions by name and whole glossaries by their owning section title. Retain ID/label selectors for ambiguity and detailed records through `--debug`.
@@ -27,7 +28,7 @@ Set the project root with `--root <directory>`; the default is the current direc
 
 Recursively index `.md` and `.markdown` files under the root. By default, exclude hidden files and directories, `.git`, `.obsidian`, `node_modules`, `_build`, and symbolic links. Do not read or index files outside the root. If the root itself is a symbolic link, normalize it to its real path and apply the same boundary rules.
 
-Read parsing settings from the nearest `myst.yml` or `myst.yaml` within the root. Document frontmatter overrides these settings. Use MyST defaults when no configuration file exists. Project configuration does not change the root automatically. Do not load remote configurations, external projects, user code, or plugins.
+Read parsing settings from the nearest `myst.yml` or `myst.yaml` within the root. Document frontmatter overrides these settings. Use MyST defaults when no configuration file exists. Project configuration does not change the root automatically. Indexing and ordinary reads do not load remote configurations, external projects, or executable user code.
 
 The CLI reads saved file contents. Unsaved edits in VS Code are outside this scope.
 
@@ -362,6 +363,22 @@ Return `{include}` and Obsidian embeds as their original reference syntax withou
 Check the latest file contents and use their current source positions. Pass the `sourceHash` returned by `sections --debug` through `--source-hash` to reject changed documents with `documentChanged`, requiring a new list query. Never use stale index line positions to return unrelated content.
 
 The `--debug` result includes the file, section metadata, `sourceHash`, actual returned range, `includeChildren`, and `content`. Preserve the original line endings.
+
+## Explicit directive and include/embed expansion
+
+`expand-directive <file> --line <observed-opening-line>` selects exactly one saved-source occurrence. MCP uses `expand_directive` with `file` and `line`; the shared API uses the `expand-directive` query on `IndexService`. Refresh the structural snapshot, validate source hashes/stable UTF-8 reads, and tokenize without execution to select the occurrence. Exclude frontmatter, code, inline code, and comments. Never accept replacement Markdown, executable code, arbitrary callback arguments, or a per-request execution flag. Multiple occurrences on one line are ambiguous; unknown/non-opening lines return an actionable selection error.
+
+Expand local MyST `include`, `literalinclude`, `embed`, and Obsidian document/heading embeds through existing root-bound file/label/heading resolution. Preserve duplicate-target ambiguity. Apply authored include line or marker filters and return literal includes as fenced code. File and content-block targets remain subject to traversal/cache exclusions, symlink checks, stable UTF-8 reads, and the 2 MiB source limit. Notebook content/outputs, Obsidian block IDs, external content, and downloads are unsupported.
+
+Registered synchronous local JavaScript directives and aliases require explicit `--allow-project-plugins` on the CLI invocation or MCP server launch. VS Code's trusted automatic provider maps `markdownChroma.mcp.projectPlugins` to this launch flag. The shared API receives `{ allowProjectPlugins: true }` as its third constructor argument. Ordinary queries never execute plugins even when this capability is enabled. Select executable entries only from the current document's nearest MyST configuration and local inheritance, with paths relative to their declaring files; ignore page-frontmatter plugin entries. Retain Preview's supported module bridge, synchronous validation/callback behavior, builtin precedence and bounded worker resources.
+
+Execute only the selected saved-source subtree; parsing the full document and discarding other outputs must not execute other occurrence callbacks. Module initialization is executable code and may have side effects. Each explicit custom expansion uses a fresh worker/module graph, with a two-second deadline, 128 MiB old-generation limit, 4 MiB result limit, and bounded node depth/count. Capture and bound stdout/stderr separately from CLI source/MCP protocol output. Workers do not confine Node file/network access; the MCP expansion tool must not advertise read-only or idempotent execution.
+
+`maxDepth` / `--max-depth` defaults to 1 and accepts 1–10. Expand the selected occurrence while retaining further syntax at the boundary; deeper requests can expand nested content. Stop include/embed cycles and more than 32 source occurrences. `maxChars` / `--max-chars` defaults to 12,000 Unicode characters and accepts 1–200,000. Truncated content is partial, not a complete result. Unsupported generated AST nodes retain readable children with a diagnostic. Callback/loading/timeout failures preserve useful content or the selected original syntax. Source races require a retry; cancellation terminates active worker execution.
+
+CLI defaults to readable Markdown; JSON and MCP return `complete`, `file`, observed `line`, `directive`, `content`, contributing `sources` (file/line), and concise `issues` when partial. These locations are actionable source context, not persisted parser records. Debug/Node results additionally retain source ranges/hash, diagnostics, and bounded worker logs. Errors use the normal selection/error presentation, and MCP sets `isError` for incomplete results.
+
+Expansion results never modify the original files or enter the persistent source index. Fresh requests reflect saved documents/configuration/plugins/helpers/data without a Preview session. Generated headings/terms/references do not become structural discovery targets. Python/executable plugins, transforms, asynchronous callbacks, full publishing builds, custom renderers, and standalone custom-role expansion are out of scope.
 
 ## Table and image lists
 

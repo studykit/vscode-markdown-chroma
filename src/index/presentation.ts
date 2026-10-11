@@ -9,6 +9,7 @@ export interface SectionOutline { title: string; id?: string; children?: Section
 /** Full Node/debug results retain snapshot diagnostics; retrieval status follows the requested scope. */
 export function retrievalStatus(result: QueryResult, query?: IndexQuery) {
   const all = result.diagnostics ?? [];
+  if ('expansion' in result) return { complete: result.complete, diagnostics: all, issues: all.map(issue => ({ file: issue.file, message: issue.message })) };
   const globalTermSelection = (query?.command === 'read-term' && !!query.arguments.names && !query.arguments.file)
     || (query?.command === 'read' && query.arguments.selections?.some(selection => selection.kind === 'term' && !selection.file));
   const sourceRead = !globalTermSelection && (query?.command === 'read' || query?.command.startsWith('read-'));
@@ -81,7 +82,7 @@ export function presentError(error: ErrorRecord) {
   const candidates = Array.isArray(error.details) ? error.details.map(candidate => {
     if (!candidate || typeof candidate !== 'object') return undefined;
     const fields = Object.hasOwn(candidate, 'name') && Object.hasOwn(candidate, 'file') ? ['id', 'name', 'file']
-      : ['id', 'title', 'headingPath', 'file', 'kind', 'label'];
+      : ['id', 'title', 'name', 'line', 'headingPath', 'file', 'kind', 'label'];
     return Object.fromEntries(fields
       .filter(key => Object.hasOwn(candidate, key)).map(key => [key, candidate[key]]));
   }).filter((candidate): candidate is NonNullable<typeof candidate> => !!candidate && Object.keys(candidate).length > 0) : [];
@@ -158,6 +159,7 @@ export function presentResult(result: QueryResult, query?: IndexQuery): Record<s
   if ('documentCount' in result) data = { documents: result.documentCount };
   else if ('notes' in result) data = { notes: result.notes.map(note => ({ file: note.file, title: note.title })) };
   else if ('sections' in result) data = { file: result.file, sections: sectionOutline(result.sections) };
+  else if ('expansion' in result) data = { file: result.file, line: result.line, directive: result.directive, content: result.content, sources: result.sources };
   else if ('content' in result) data = { file: result.file, content: result.content };
   else if ('backlinks' in result) data = { file: result.file,
     backlinks: result.backlinks.map(link => ({ ...location(link), kind: link.kind, text: link.raw })) };

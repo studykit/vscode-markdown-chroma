@@ -413,6 +413,17 @@ export class MarkdownIndex {
       throw new IndexError('fileNotFound', `Markdown file is excluded from the root: ${file}`);
     return file;
   }
+  /** Explicit expansion uses the same saved-source checks, including local code files. */
+  readExpansionSource(file: string): string {
+    if (path.isAbsolute(file) || /[\0\\]/.test(file)) throw new IndexError('invalidFile', 'File arguments must be root-relative paths.');
+    file = path.posix.normalize(file);
+    if (isExcludedIndexPath(this.root, path.resolve(this.root, file), this.cacheDirectory)) throw new IndexError('outsideRoot', 'Expansion source is outside the root or excluded.');
+    const source = this.readFile(file);
+    const document = this.data?.documents.find(item => item.file === file);
+    if (document?.sourceHash && hash(source) !== document.sourceHash) throw new IndexError('documentChanged', `Document changed; observe its source again: ${file}`);
+    return source;
+  }
+  expansionConfiguration(file: string) { return this.config(file); }
   readLines(args: { file: string; startLine: number; endLine?: number; sourceHash?: string }) {
     const file = this.sourcePath(args.file), source = this.readSourceFile(file);
     const sourceHash = hash(source);

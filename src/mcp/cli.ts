@@ -16,6 +16,7 @@ Serves saved Markdown/MyST over MCP stdio (default) or Streamable HTTP. Node >=2
   --allowed-hosts names     Comma-separated HTTP Host hostnames, without ports
   --allowed-origins names   Comma-separated Origin hostnames, without scheme/ports
   --no-watch                Disable background file watching (queries still refresh)
+  --allow-project-plugins   Allow registered JavaScript in explicit expand_directive calls
 
 HTTP endpoint: /mcp. Startup URL and root are written to stderr.
 MARKDOWN_CHROMA_MCP_TOKEN sets a Bearer token; required for non-loopback access.
@@ -38,7 +39,7 @@ export async function runMcp(argv: string[]): Promise<void> {
     if (argv.includes('--help') || argv.includes('-h')) { process.stdout.write(help); return; }
     const values = new Map<string, string>();
     for (let i = 0; i < argv.length; i++) {
-      if (argv[i] === '--no-watch' && !values.has('no-watch')) { values.set('no-watch', 'true'); continue; }
+      if (['--no-watch', '--allow-project-plugins'].includes(argv[i]) && !values.has(argv[i].slice(2))) { values.set(argv[i].slice(2), 'true'); continue; }
       const match = /^--(root|cache-dir|transport|host|port|allowed-hosts|allowed-origins)(?:=(.*))?$/.exec(argv[i]);
       if (!match || values.has(match[1])) throw new IndexError('invalidArguments', `Unknown or repeated option: ${argv[i]}`);
       const value = match[2] ?? argv[++i];
@@ -65,7 +66,7 @@ export async function runMcp(argv: string[]): Promise<void> {
       throw new IndexError('invalidArguments', 'Non-loopback HTTP binding requires --allowed-hosts.');
     }
     // Validate and bind one saved-file root before either transport starts.
-    const service = new IndexService(values.get('root'), values.get('cache-dir'));
+    const service = new IndexService(values.get('root'), values.get('cache-dir'), { allowProjectPlugins: values.has('allow-project-plugins') });
     if (!values.has('no-watch')) watcher = await startIndexWatch(service, { onError: report });
     const handle = transport === 'stdio' ? startStdio(service, report)
       : await startHttp(service, { host, port, allowedHosts, allowedOrigins, token }, report);

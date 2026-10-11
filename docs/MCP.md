@@ -1,6 +1,6 @@
 # Markdown Chroma MCP server
 
-Give an MCP client access to a folder of saved Markdown/MyST files. The server provides the same search and retrieval features as the [CLI](CLI.md), through **15 tools**, with stdio or Streamable HTTP connections.
+Give an MCP client access to a folder of saved Markdown/MyST files. The server provides the same retrieval and selective expansion features as the [CLI](CLI.md), through **16 tools**, with stdio or Streamable HTTP connections.
 
 [Back to the overview](../README.md) · [CLI guide](CLI.md) · [Detailed index specification](CLI-INDEX-SPEC.md)
 
@@ -17,6 +17,7 @@ VS Code manages the server process and tool approvals. The bundled server uses t
 | --- | --- | --- |
 | `markdownChroma.mcp.enabled` | `true` | Offer an MCP server for the workspace folder |
 | `markdownChroma.mcp.root` | `""` | Use the workspace folder; set a relative path or an absolute directory inside it to narrow the root |
+| `markdownChroma.mcp.projectPlugins` | `false` | Allow registered JavaScript in explicit directive expansion calls; restart the server after changing it |
 
 Multi-root workspaces offer one server for each trusted local folder. Roots outside the workspace or missing directories are rejected. Definitions are refreshed when folders, settings, or trust change and are checked again before launch. The preview's `markdownChroma.preview.root` setting is separate.
 
@@ -127,6 +128,7 @@ File arguments are exact paths relative to the server root. Optional arguments m
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
+| `expand_directive` | **`file`**, **`line`**, `maxDepth`, `maxChars`, `sourceHash` | Expand one observed opening line into readable Markdown, with contributing sources and partial-result issues |
 | `index_documents` | `rebuild` | Refresh available documents and return their count |
 | `list_notes` | `unresolved` | Files and titles |
 | `search_notes` | `tags`, `exactTag`, `where`, `hasProperty` | AND search; at least one tag/property filter is required |
@@ -182,7 +184,7 @@ Results contain retrieval information and `complete`. They omit cache paths, ver
 
 `issues` contains one short summary of relevant problems. File queries and section or explicit-item reads exclude unrelated document or source-range syntax diagnostics. File-wide frontmatter/configuration problems remain relevant. Global discovery, name-only term lookup, and backlinks retain project-wide completeness, as parsing failures can hide matches. Per-item errors and budget omissions always make a batch partial. The Node API and CLI `--debug` retain all snapshot diagnostics and project-wide status.
 
-Both transports share [MyST plugin inspection](CLI.md#myst-project-plugins): confirmed static local role/directive declarations do not produce unknown-syntax errors, and plugin code is never executed. Discovery reports `complete: false` and `isError: true` when generated content may be missing. Explicit saved-source reads ignore this generation limitation, while name-only term selection remains conservative. Uninspectable definitions and real syntax errors retain their diagnostics. Source content is never rewritten.
+Both transports share [MyST plugin inspection](CLI.md#myst-project-plugins): indexing and ordinary reads never execute plugin code. Discovery reports `complete: false` and `isError: true` when generated content may be missing. Explicit saved-source reads ignore this generation limitation, while name-only term selection remains conservative. Uninspectable definitions and real syntax errors retain their diagnostics. Source content is never rewritten.
 
 For example, `list_sections` returns:
 
@@ -203,6 +205,25 @@ Ambiguous term names return `ambiguousTerm` with candidates; choose a file or a 
 Queries use saved files. They do not read unsaved editor contents. Requests and background refreshes are serialized on the same service; structural queries in separate CLI/server processes share cache locks. Line reads do not acquire those locks. Cancellation can stop a lock wait but does not interrupt synchronous parsing already in progress. Structural refresh cost grows with the root size. Structural lists do not provide pagination.
 
 Read tools return original Markdown. Tables and images provide lists and locations, rather than separate raw-content reads or image binaries. See the [index specification](CLI-INDEX-SPEC.md) for other limits and diagnostics.
+
+## Selective expansion after a source read
+
+Read the authored source first, then call `expand_directive` only when that occurrence's content is needed. Pass its observed opening `line`, not a guessed position. Local include/literalinclude and document/heading/label embeds work without JavaScript permission.
+
+For custom JavaScript directives, enable the server capability at launch:
+
+```sh
+markdown-chroma-mcp --root ./notes --allow-project-plugins
+markdown-chroma-mcp --transport http --root ./notes --allow-project-plugins
+```
+
+For the automatic VS Code server, enable `markdownChroma.mcp.projectPlugins` in a trusted workspace and restart the server. This setting is separate from Preview plugin execution. An MCP request cannot enable execution, register code, replace source, or change the root.
+
+`maxDepth` defaults to `1` (maximum `10`), `maxChars` to `12000` Unicode characters (maximum `200000`). Further nested syntax is retained at the depth limit; retry the same source occurrence with a larger depth if needed. Selection ambiguity, cycles, timeouts, unsupported nodes, and truncated output are actionable failures/partial results. The response contains readable Markdown and source context, not a full AST. Expansion results are not added to the structural index. See [CLI expansion](CLI.md#expand-a-directive-or-document-embed) for supported syntax and limits.
+
+Plugins retain Node file/network access and can have side effects. The expansion tool is therefore not advertised as read-only or idempotent, and worker logs never go to MCP stdout. Module initialization can run when loading registered plugins; callbacks outside the selected subtree do not run.
+
+For the shared API, supply the launch capability as the third constructor argument: `new IndexService(root, cacheDirectory, { allowProjectPlugins: true })`, then execute an `expand-directive` query. This does not enable execution in ordinary queries.
 
 ## Shared Node API
 

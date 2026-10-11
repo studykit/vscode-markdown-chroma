@@ -117,7 +117,7 @@ test('HTTP validates Host, Origin, bearer token, endpoint, methods and request s
     const client = new Client({ name: 'authorized', version: '1' });
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(handle.url), { requestInit: { headers: authorized } }));
-      assert.equal((await client.listTools()).tools.length, 15);
+      assert.equal((await client.listTools()).tools.length, 16);
     } finally { await client.close(); }
   } finally { await handle.close(); await f.cleanup(); }
 });
