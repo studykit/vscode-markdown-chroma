@@ -8,11 +8,13 @@ Start with any folder of Markdown files. An Obsidian vault or MyST project is op
 
 ## Start reading in three steps
 
-1. Install the Markdown Chroma `.vsix` with **Extensions: Install from VSIX...** in VS Code.
+1. Install [Markdown Chroma from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=studykit.markdown-chroma), or search for `studykit.markdown-chroma` in VS Code's Extensions view.
 2. Open a folder of Markdown files, then open a `.md` document.
 3. Run **Markdown: Open Preview to the Side** from the Command Palette.
 
 Shortcut: **Cmd+K V** on macOS or **Ctrl+K V** on Windows/Linux. You can also run **Markdown Chroma: Open Preview to the Side**.
+
+If you have a `.vsix` file, use **Extensions: Install from VSIX...** in VS Code to install it locally.
 
 The preview follows your VS Code theme and scroll position. Open-document edits appear before you save, including edits to notes embedded in the page. Add a language such as `python`, `javascript`, or `json` after the opening code fence for syntax highlighting.
 

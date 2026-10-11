@@ -47,9 +47,7 @@ npm install -g ./markdown-chroma-0.1.0.tgz
 
 `npm pack` invokes the build through `prepack`. Generated bundles, archives, and VSIX files are ignored by Git.
 
-The public npm package is `markdown-chroma`; it contains both CLI executables and the `markdown-chroma/index` API. Before publishing, verify the packed archive through an isolated install, including CLI commands, MCP calls and API declarations. Use `npm publish ./artifacts/markdown-chroma-0.1.0.tgz --dry-run` to inspect the exact archive, then publish that same verified archive with `npm publish ./artifacts/markdown-chroma-0.1.0.tgz --access public`. Publishing requires npm authentication and the registry's account verification. A dry run does not publish or prove publishing authorization. Keep version numbers, archive names and pinned `npx` examples aligned for future releases.
-
-After publishing, verify anonymous registry access to the intended version and compare its downloaded tarball/integrity with the tested archive. Check the `latest` tag and run both public `npx` executables outside the checkout with a fresh cache. Registry acceptance can precede public availability; a successful CLI exit or a `0.0.0-stage` placeholder does not establish that the intended version is installable. Do not submit the same version again while an accepted publish is processing.
+The npm package contains both CLI executables and the `markdown-chroma/index` API. Verify the packed archive in an isolated consumer project, including CLI commands, MCP calls and API declarations. Keep version numbers, archive names and pinned `npx` examples aligned.
 
 ## Runtime verification
 

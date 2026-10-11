@@ -1,0 +1,8 @@
+# Changelog
+
+## 0.1.0
+
+- Preview Obsidian Markdown with wikilinks, note embeds, foldable callouts, highlights, tags, tasks, and footnotes.
+- Preview MyST / Jupyter Book 2 syntax, including equations, references, citations, glossaries, tabs, cards, local includes, and saved notebook outputs.
+- Enable project-defined JavaScript directives, roles, and aliases in trusted workspaces, with plugin logs and reload commands.
+- Read saved Markdown documents through the CLI and MCP server, with automatic indexing, section and glossary reads, batch reads, and explicit directive expansion.
