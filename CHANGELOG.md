@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Preserve Obsidian block anchors, wikilinks, and block embeds in documents that also use MyST syntax or project configuration.
+- Keep block markers hidden, preserve MyST heading labels, and exclude code examples from block reference targets.
+
 ## 0.1.1
 
 - Render indented glossary names on separate lines, with the first name as the canonical term and subsequent names as aliases.

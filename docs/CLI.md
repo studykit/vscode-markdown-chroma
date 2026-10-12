@@ -16,10 +16,10 @@ markdown-chroma --help
 This installs both `markdown-chroma` and `markdown-chroma-mcp` from the same package. To run the CLI without a global installation:
 
 ```sh
-npx --yes markdown-chroma@0.1.1 notes --root ./notes
+npx --yes markdown-chroma@0.1.2 notes --root ./notes
 ```
 
-Use a specific version in automated setups. You can also install a downloaded archive with `npm install -g ./markdown-chroma-0.1.1.tgz`. For building from source, see [developer setup](../AGENTS.md).
+Use a specific version in automated setups. You can also install a downloaded archive with `npm install -g ./markdown-chroma-0.1.2.tgz`. For building from source, see [developer setup](../AGENTS.md).
 
 ## Start with your notes folder
 

@@ -330,7 +330,10 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
       const id = (standalone ?? trailing)![1];
       block.attrSet('id', `obsidian-block-${id}`);
       block.attrSet('data-obsidian-block', id);
-      block.meta = { ...block.meta, obsidianBlockRange: block.map ? [...block.map] : undefined };
+      block.meta = {
+        ...block.meta, obsidianBlockRange: [...block.map!],
+        obsidianBlockMarker: { map: token.map ? [...token.map] : undefined, standalone: !!standalone }
+      };
     }
   });
   md.renderer.rules.obsidian_checkbox = (tokens, index) => {

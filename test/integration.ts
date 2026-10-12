@@ -9,6 +9,7 @@ import { crossReferenceSource, assertCrossReferences } from './cross-references'
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 import { verifyPreviewPlugins } from './preview-plugins-integration';
 import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
+import { obsidianBlockSource, assertObsidianBlocks } from './obsidian-blocks';
 
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension('studykit.markdown-chroma');
@@ -158,6 +159,23 @@ export async function run(): Promise<void> {
   console.log('PASS: native and MyST fenced blocks and code directives highlight 11 language IDs; plain and unknown languages remain escaped text');
 
   const document = new JSDOM(html).window.document;
+  const blockScratch = vscode.Uri.file(path.join(root, 'Block references integration.md'));
+  try {
+    for (const prefix of ['', '{kbd}`Ctrl`\n\n']) {
+      const source = prefix + obsidianBlockSource;
+      await vscode.workspace.fs.writeFile(blockScratch, Buffer.from(source));
+      const input = { uri: blockScratch, version: -1, getText: () => source };
+      const rendered = (await vscode.commands.executeCommand<string>('markdown.api.render', input))!;
+      assertObsidianBlocks(new JSDOM(rendered).window.document);
+    }
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+    const input = { uri: showcase.uri, version: -1, getText: () => '{kbd}`Ctrl`\n\n[[Block references integration#^item]]\n\n![[Block references integration#^item]]' };
+    const rendered = (await vscode.commands.executeCommand<string>('markdown.api.render', input))!;
+    const blocks = new JSDOM(rendered).window.document;
+    assert.equal(blocks.querySelector('.obsidian-embed-content li')?.textContent?.trim(), 'src/lib/');
+    assert.equal(blocks.querySelector('.is-unresolved, .obsidian-embed-error'), null);
+  } finally { await vscode.workspace.fs.delete(blockScratch); }
+  console.log('PASS: actual Markdown and MyST renderers preserve Obsidian block anchors, wikilinks and list-item embeds');
   const footnoteDocument = {
     uri: showcase.uri, version: -1,
     getText: () => '# Title\n\nFirst[^n] and again[^n].\nNext[^n] with "quotes".\n\n[^n]: Note.'

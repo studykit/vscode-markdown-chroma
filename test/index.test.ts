@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { parseIndex, extract, hash } from '../src/index/parser';
 import { MarkdownIndex } from '../src/index/project';
 import { runCli } from '../src/index/cli';
+import { obsidianBlockSource } from './obsidian-blocks';
 
 const execute = promisify(execFile);
 async function fixture(files: Record<string, string>) {
@@ -24,6 +25,33 @@ async function fixture(files: Record<string, string>) {
   };
   return { root, cache, directory, index, write, cli, cleanup: () => fs.rm(directory, { recursive: true, force: true }) };
 }
+
+test('mixed preview syntax indexes sections, tables, terms and file-level block backlinks without changing saved source', async t => {
+  for (const ending of ['\n', '\r\n']) {
+    const source = (obsidianBlockSource + '\n## Terms\n\n{term}`Cache`\n\n:::{glossary}\nCache\n: Stored content.\n:::\n').replace(/\n/g, ending);
+    const f = await fixture({ 'guide.md': source }); t.after(f.cleanup);
+    await f.index.refresh();
+    const document = f.index.document('guide.md');
+    assert.equal(document.diagnostics.length, 0);
+    assert.deepEqual(document.sections.map(section => section.title), ['References', 'Terms']);
+    assert.equal(document.tables.length, 1);
+    assert.deepEqual(document.terms.map(term => term.name), ['Cache']);
+    const blocks = document.outgoing.filter(reference => reference.fragment?.startsWith('^'));
+    assert.equal(blocks.length, 6);
+    assert.ok(blocks.every(reference => reference.resolution?.status === 'found' && reference.resolution.fragmentStatus === 'notIndexed'));
+    assert.equal(document.outgoing.find(reference => reference.kind === 'term')?.resolution?.targetKind, 'term');
+    const section = document.sections[0];
+    const read = await f.cli('read-section', 'guide.md', '--title', section.title);
+    assert.equal(read.code, 0);
+    assert.equal(read.stdout, extract(source, section.startLine, section.endLine));
+    const lines = await f.cli('read-lines', 'guide.md', '--start', '1', '--end', String(source.split(ending).length));
+    assert.equal(lines.code, 0);
+    assert.equal(lines.stdout, source);
+    await f.index.refresh();
+    assert.equal(f.index.stats.parsed, 0);
+    assert.equal(f.index.stats.reused, 1);
+  }
+});
 
 test('sections retain labels, hierarchy, Setext, reserved IDs, CRLF and raw ranges', () => {
   const source = '---\r\ntitle: Title\r\n---\r\nIntro.\r\n\r\n(setup)=\r\n# 설치\r\nParent.\r\n## Child\r\nChild body.\r\n\r\n::: {note}\r\n# Hidden heading\r\n::: \r\n\r\n설치\r\n====\r\nSecond.\r\n\r\n# preamble\r\nFinal';

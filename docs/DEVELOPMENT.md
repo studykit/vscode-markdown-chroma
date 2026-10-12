@@ -19,7 +19,7 @@ Build and package a VS Code extension:
 npm run package
 ```
 
-The current manifest produces `artifacts/markdown-chroma-0.1.1.vsix`. Install it with VS Code's `Extensions: Install from VSIX...` command. Keep artifact names and documentation aligned with `package.json` when changing the version.
+The current manifest produces `artifacts/markdown-chroma-0.1.2.vsix`. Install it with VS Code's `Extensions: Install from VSIX...` command. Keep artifact names and documentation aligned with `package.json` when changing the version.
 
 For CLI development, run a built entry point directly:
 
@@ -35,7 +35,7 @@ To create and install the npm archive:
 
 ```sh
 npm pack
-npm install -g ./markdown-chroma-0.1.1.tgz
+npm install -g ./markdown-chroma-0.1.2.tgz
 ```
 
 `npm pack` invokes the build through `prepack`. Generated bundles, archives, and VSIX files are ignored by Git.

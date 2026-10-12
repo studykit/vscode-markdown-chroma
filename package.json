@@ -2,7 +2,7 @@
   "name": "markdown-chroma",
   "displayName": "Markdown Chroma",
   "description": "Obsidian and MyST Markdown preview for VS Code, with saved-document CLI and MCP retrieval.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "studykit",
   "icon": "media/icon.png",
   "repository": {
@@ -176,7 +176,7 @@
     "check": "npm run typecheck && npm test",
     "prepack": "npm run build",
     "vscode:prepublish": "npm run build",
-    "package": "mkdir -p artifacts && vsce package --no-dependencies --out artifacts/markdown-chroma-0.1.1.vsix"
+    "package": "mkdir -p artifacts && vsce package --no-dependencies --out artifacts/markdown-chroma-0.1.2.vsix"
   },
   "dependencies": {
     "@citation-js/core": "0.9.0",

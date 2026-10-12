@@ -7,8 +7,57 @@ import { extendMystMarkdown } from '../src/myst';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
+import { obsidianBlockSource, assertObsidianBlocks } from './obsidian-blocks';
+import { findSection } from '../src/references';
 
 const dom = (html: string) => new JSDOM(html).window.document;
+
+test('Obsidian block anchors and wikilinks survive MyST roles and project configuration', async t => {
+  for (const [prefix, configuration] of [['', false], ['{kbd}`Ctrl`\n\n', false], ['', true]] as const) {
+    const source = prefix + obsidianBlockSource;
+    const f = await fixture(t, { 'Main.md': source, ...(configuration ? { 'myst.yml': 'version: 1\nproject: {}\n' } : {}) });
+    extendMystMarkdown(f.md, f.host);
+    assertObsidianBlocks(dom(f.render(source)));
+    const section = findSection(f.md, source, '^item');
+    assert.ok(section);
+    assert.equal(source.split('\n').slice(section.start, section.end).join('\n').trim(), '- src/lib/ ^item');
+    for (const id of ['fake', 'inline', 'escaped']) assert.equal(findSection(f.md, source, `^${id}`), undefined);
+  }
+});
+
+test('MyST block links and embeds select saved or dirty list items and prefix embedded anchors', async t => {
+  const source = '{kbd}`Ctrl`\n\n' + obsidianBlockSource;
+  const f = await fixture(t, { 'Main.md': '', 'Note.md': source });
+  extendMystMarkdown(f.md, f.host);
+  for (const prefix of ['', '{kbd}`Ctrl`\n\n']) {
+    const document = dom(f.render(prefix + '[[Note#^item]]\n\n![[Note#^item]]\n\n![[Note#^list]]'));
+    assert.equal(document.querySelector('a.obsidian-link')?.getAttribute('href'), 'Note.md#obsidian-block-item');
+    const embeds = [...document.querySelectorAll('.obsidian-embed-content')];
+    assert.equal(embeds[0].querySelectorAll('li').length, 1);
+    assert.equal(embeds[0].querySelector('li')?.textContent?.trim(), 'src/lib/');
+    assert.equal(embeds[1].querySelectorAll('li').length, 2);
+    assert.equal(document.querySelector('#obsidian-block-item'), null);
+    assert.equal(new Set([...document.querySelectorAll('[id]')].map(node => node.id)).size, document.querySelectorAll('[id]').length);
+    assert.equal(document.querySelector('.is-unresolved, .obsidian-embed-error'), null);
+  }
+  const tokens = f.md.parse('{kbd}`Ctrl`\n\n![[Note#^item]]', f.environment());
+  f.dirty.set(`${f.root}/Note.md`, source.replace('src/lib/', 'src/changed/'));
+  const document = dom(f.md.renderer.render(tokens, f.md.options, f.environment()));
+  assert.match(document.querySelector('.obsidian-embed-content')?.textContent ?? '', /src\/changed\//);
+});
+
+test('MyST block discovery preserves heading labels and excludes colon-fenced code targets', async t => {
+  const source = '{kbd}`Ctrl`\n\n(label)=\n## Heading ^heading\n\n[[#^heading]] {ref}`label`\n\n:::{code} md\n## Fake heading\n\nFake paragraph. ^fake\n\n:::\n';
+  const f = await fixture(t, { 'Main.md': source });
+  extendMystMarkdown(f.md, f.host);
+  const document = dom(f.render(source));
+  for (const link of document.querySelectorAll('a')) assert.ok(document.getElementById(link.getAttribute('href')!.slice(1)), link.outerHTML);
+  assert.equal(document.querySelectorAll('a.obsidian-link').length, 1);
+  assert.equal(findSection(f.md, source, '^fake'), undefined);
+  assert.equal(findSection(f.md, source, 'Fake heading'), undefined);
+  assert.equal(document.getElementById('obsidian-block-fake'), null);
+  assert.match(document.querySelector('pre code')?.textContent ?? '', /Fake paragraph\. \^fake/);
+});
 
 test('indented glossary definitions render canonical terms, aliases and references without changing ordinary prose', async t => {
   const f = await fixture(t, { 'Main.md': '' });

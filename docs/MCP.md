@@ -42,10 +42,10 @@ markdown-chroma mcp --root /absolute/path/to/notes
 You can also run it without a global installation:
 
 ```sh
-npx --yes --package markdown-chroma@0.1.1 markdown-chroma-mcp --root /absolute/path/to/notes
+npx --yes --package markdown-chroma@0.1.2 markdown-chroma-mcp --root /absolute/path/to/notes
 ```
 
-Use a specific version in automated setups. `markdown-chroma-mcp` is an executable included in `markdown-chroma`, not a separate npm package. A downloaded archive can be installed with `npm install -g ./markdown-chroma-0.1.1.tgz`.
+Use a specific version in automated setups. `markdown-chroma-mcp` is an executable included in `markdown-chroma`, not a separate npm package. A downloaded archive can be installed with `npm install -g ./markdown-chroma-0.1.2.tgz`.
 
 For a build from source, use `node dist/mcp.cjs` with the same options. See [developer setup](../AGENTS.md).
 
@@ -74,7 +74,7 @@ In VS Code, run **MCP: Open User Configuration** and add this to the `servers` o
 
 Replace the root with your folder. If the client cannot find the executable, use its absolute installed path; on macOS/Linux, find it with `command -v markdown-chroma-mcp`. Other clients may use a different configuration format with the same command and arguments.
 
-For a client that launches through `npx`, use `"command": "npx"` and `"args": ["--yes", "--package", "markdown-chroma@0.1.1", "markdown-chroma-mcp", "--root", "/absolute/path/to/notes"]` instead.
+For a client that launches through `npx`, use `"command": "npx"` and `"args": ["--yes", "--package", "markdown-chroma@0.1.2", "markdown-chroma-mcp", "--root", "/absolute/path/to/notes"]` instead.
 
 Run **MCP: List Servers**, select the server, and start it. If you use manual setup alongside the extension, set `markdownChroma.mcp.enabled` to `false` for that workspace folder to avoid two servers for the same project. See [VS Code's MCP configuration guide](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
 

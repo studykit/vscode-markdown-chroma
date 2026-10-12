@@ -25,8 +25,45 @@ const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, chara
 const safeUrl = (url: string) => { const clean = url.trim().replace(/[\u0000-\u0020]/g, ''); return /^[a-z][a-z0-9+.-]*:/i.test(clean) && !/^(?:https?:|mailto:|file:|vscode-webview-resource:)/i.test(clean) ? '' : url; };
 const size = (value: unknown) => /^\d+(?:\.\d+)?(?:px|em|rem|%|vw|vh)?$/.test(String(value)) ? (/^\d+(?:\.\d+)?$/.test(String(value)) ? `${value}px` : String(value)) : '';
 
+// Reuse the native Obsidian rule's block and marker ranges. The MyST parser
+// owns the AST; only recognized source markers become preview anchors.
+function applyObsidianBlocks(tree: Node, tokens: Token[]): Token[] {
+  const types: Record<string, string> = {
+    paragraph_open: 'paragraph', heading_open: 'heading', list_item_open: 'listItem',
+    bullet_list_open: 'list', ordered_list_open: 'list', blockquote_open: 'blockquote',
+    obsidian_callout_open: 'blockquote', table_open: 'table', fence: 'code', code_block: 'code'
+  };
+  const nodes: Node[] = [];
+  walk(tree, node => nodes.push(node));
+  return tokens.filter(token => {
+    const id = token.attrGet('data-obsidian-block');
+    if (!id && token.type !== 'heading_open') return true;
+    const target = types[token.type] && token.map
+      ? nodes.find(node => node.type === types[token.type] && node.position?.start.line === token.map![0] + 1)
+      : undefined;
+    // Native Markdown can see apparent headings/IDs inside colon-fenced MyST
+    // code. Only actual AST blocks may be reference targets.
+    if (token.type === 'heading_open' && !target) return false;
+    const marker = token.meta?.obsidianBlockMarker;
+    if (!id) return true;
+    if (!target || !marker?.map) return false;
+    target._obsidianBlockId = id;
+    const inMarker = (node: Node) => node.position?.start.line >= marker.map[0] + 1 && node.position?.end.line <= marker.map[1];
+    if (marker.standalone) {
+      const paragraph = nodes.find(node => node.type === 'paragraph' && inMarker(node) && text(node).trim() === `^${id}`);
+      if (paragraph) paragraph._obsidianHidden = true;
+    } else {
+      const suffix = new RegExp(`[ \\t]+\\^${id}[ \\t]*$`);
+      const last = nodes.findLast(node => node.type === 'text' && inMarker(node) && suffix.test(node.value ?? ''));
+      if (last) last.value = last.value.replace(suffix, '');
+    }
+    return true;
+  });
+}
+
 export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownIt {
   const nativeParse = md.parse.bind(md);
+  let referenceCache: { source: string; tokens: Token[] } | undefined;
   const TokenClass = nativeParse('', {})[0]?.constructor as typeof Token | undefined;
   // Empty input has no tokens; obtain the constructor from a paragraph.
   const TokenType = TokenClass ?? nativeParse('x', {})[0].constructor as typeof Token;
@@ -51,10 +88,11 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       if (/^\s*>\s*\[!/.test(block)) node._obsidianSource = block;
     });
     normalizeGlossaries(tree, source, body => mystParse(body, parseOptions), vfile);
+    const referenceTokens = applyObsidianBlocks(tree, nativeParse(source, {}));
     basicTransformations(tree, vfile);
     glossaryTransform(tree, vfile);
     abbreviationTransform(tree, { abbreviations: project.abbreviations });
-    return { tree, vfile };
+    return { tree, vfile, referenceTokens };
   };
   const stripHeader = (source: string) => {
     const match = /^---\s*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)\s*(?:\r?\n|$)/.exec(source);
@@ -94,7 +132,14 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     // Resolve references and include files once at render time, so cached tokens
     // also see dirty VS Code buffers and resource URLs for the current webview.
     const token = new TokenType('myst_document', '', 0);
-    token.meta = { body, metadata };
+    // Reference discovery uses the built-in parser without executing project
+    // plugins, and validates native targets against actual MyST blocks.
+    token.meta = { body, metadata, referenceTokens: () => {
+      // A document can contain hundreds of links to itself. Reuse one bounded
+      // source snapshot while fresh saved/dirty source still invalidates it.
+      if (referenceCache?.source !== source) referenceCache = { source, tokens: parse(body, undefined, metadata).referenceTokens };
+      return referenceCache.tokens;
+    } };
     token.map = [0, source.split('\n').length];
     const frontmatter = header ? native.filter(item => /^(?:frontmatter|front_matter)/.test(item.type)) : [];
     return [...frontmatter, token];
@@ -174,12 +219,17 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       if (!bib) continue;
       try { for (const entry of new Cite(bib.content).data) bibliography.set(String(entry.id).toLowerCase(), entry); } catch { /* Render unresolved citations below. */ }
     }
-    const attr = (node: Node) => `${node.html_id || node.identifier ? ` id="${escape(node.html_id || node.identifier)}"` : ''}${node.class ? ` class="${escape(node.class)}"` : ''}`;
+    const identifier = (node: Node) => node.html_id || node.identifier || (node._obsidianBlockId ? `${env.obsidian?.prefix ?? ''}obsidian-block-${node._obsidianBlockId}` : '');
+    const idAttr = (node: Node) => identifier(node) ? ` id="${escape(identifier(node))}"` : '';
+    const attr = (node: Node) => `${idAttr(node)}${node.class ? ` class="${escape(node.class)}"` : ''}`;
+    const extraAnchor = (node: Node) => node._obsidianBlockId && (node.html_id || node.identifier)
+      ? `<span id="${escape(`${env.obsidian?.prefix ?? ''}obsidian-block-${node._obsidianBlockId}`)}"></span>` : '';
     const render = (node: Node, stack: string[] = [], preserveLineBreaks = false): string => {
       const environment: RenderEnvironment = environments.get(node) ?? env;
-      const children = () => node.children?.map(child => render(child as Node, stack, preserveLineBreaks)).join('') ?? '';
+      const children = () => extraAnchor(node) + (node.children?.map(child => render(child as Node, stack, preserveLineBreaks)).join('') ?? '');
       const tag = (name: string, attributes = attr(node)) => `<${name}${attributes}>${children()}</${name}>`;
-      if (node._obsidianSource) return nativeRender(node._obsidianSource, environment);
+      if (node._obsidianHidden) return '';
+      if (node._obsidianSource) return nativeRender(node._obsidianSource + (node._obsidianBlockId ? `\n\n^${node._obsidianBlockId}` : ''), environment);
       try {
       switch (node.type) {
         case 'root': return children();
@@ -188,7 +238,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
           return lines.map(value => /\[\[|==|%%/.test(value) ? nativeInline(value, environment) : escape(value)).join('<br>');
         }
         case 'paragraph': return /^\s*!\[\[[^\n]+\]\]\s*$/.test(text(node)) ? nativeRender(text(node), environment) : tag('p');
-        case 'block': return tag('div', ` class="myst-block ${escape(node.class ?? '')}"${node.html_id || node.identifier ? ` id="${escape(node.html_id || node.identifier)}"` : ''}`);
+        case 'block': return tag('div', ` class="myst-block ${escape(node.class ?? '')}"${idAttr(node)}`);
         case 'heading': return tag(`h${Math.min(6, Math.max(1, node.depth))}`);
         case 'emphasis': return tag('em');
         case 'strong': return tag('strong');
@@ -204,7 +254,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         case 'code': {
           const token = new TokenType('fence', 'code', 0); token.info = node.lang ?? ''; token.content = node.value ?? '';
           const code = md.renderer.rules.fence?.([token], 0, md.options, environment, md.renderer) ?? `<pre><code>${escape(node.value)}</code></pre>`;
-          return `<div${node.html_id || node.identifier ? ` id="${escape(node.html_id || node.identifier)}"` : ''} class="myst-code${node.showLineNumbers ? ' has-line-numbers' : ''}"${node.filename ? ` data-filename="${escape(node.filename)}"` : ''}>${code}</div>`;
+          return `<div${idAttr(node)} class="myst-code${node.showLineNumbers ? ' has-line-numbers' : ''}"${node.filename ? ` data-filename="${escape(node.filename)}"` : ''}>${extraAnchor(node)}${code}</div>`;
         }
         case 'html': return md.options.html ? node.value ?? '' : escape(node.value);
         case 'comment': case 'mystTarget': case 'indexEntry': case 'footnoteDefinition': return '';
@@ -216,7 +266,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
           return /^\s*>\s*\[!/.test(source) ? nativeRender(source, environment) : tag('blockquote');
         }
         case 'list': return tag(node.ordered ? 'ol' : 'ul', attr(node) + (node.ordered && node.start ? ` start="${Number(node.start)}"` : ''));
-        case 'listItem': return `<li>${node.checked == null ? '' : `<input type="checkbox" disabled${node.checked ? ' checked' : ''}> `}${children()}</li>`;
+        case 'listItem': return `<li${attr(node)}>${node.checked == null ? '' : `<input type="checkbox" disabled${node.checked ? ' checked' : ''}> `}${children()}</li>`;
         case 'definitionList': return tag('dl');
         case 'definitionTerm': return `<dt${attr(node)}>${children()}${(node.aliasNodes ?? []).map((alias: Node) => `<br><span class="myst-term-alias">${alias.children?.map(child => render(child, stack)).join('') ?? ''}</span>`).join('')}</dt>`;
         case 'definitionDescription': return tag('dd');

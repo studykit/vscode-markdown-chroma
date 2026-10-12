@@ -34,7 +34,7 @@ export interface Section {
 
 /** Parse real Markdown blocks so headings/IDs inside code never become targets. */
 export function findSection(md: MarkdownIt, source: string, fragment: string): Section | undefined {
-  const tokens = md.parse(source, {});
+  const tokens: Token[] = md.parse(source, {}).flatMap(token => token.type === 'myst_document' ? token.meta.referenceTokens() : [token]);
   if (fragment.startsWith('^')) {
     const id = fragment.slice(1);
     const token = tokens.find(item => item.attrGet('data-obsidian-block') === id);
