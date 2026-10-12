@@ -14,6 +14,7 @@ import { parseFrontmatter } from './frontmatter';
 import { mystConfiguration, mergeSettings, type Settings } from './myst-config';
 import type { PreviewHost, RenderEnvironment } from './types';
 import { pluginRecovery } from './preview-plugins/events';
+import { normalizeGlossaries, resolveGlossaryAliases } from './glossary';
 
 // The official parser owns syntax. This adapter renders its AST in VS Code's
 // existing Markdown preview, without a project, server, shell or web theme.
@@ -37,7 +38,8 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     // included file so plugin paths and definitions stay in its own project.
     const config = file ? mystConfiguration(host, { currentDocument: host.documentUri(file) }) : undefined;
     const plugins = file ? host.parseMystPlugins?.(source, file, { ...project, plugins: config?.project.plugins }) : undefined;
-    const tree: ReturnType<typeof mystParse> = plugins?.tree ?? mystParse(source, { ...options, extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile });
+    const parseOptions = { ...options, extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile };
+    const tree: ReturnType<typeof mystParse> = plugins?.tree ?? mystParse(source, parseOptions);
     const problems = [...(plugins?.errors ?? []), ...(plugins?.messages ?? []).map(message => `MyST${message.line ? ` line ${message.line}` : ''}: ${message.reason}`)];
     if (plugins?.errors.length || plugins?.diagnostics?.length) problems.push(pluginRecovery);
     if (plugins?.pending) problems.push('Loading MyST project plugins; Preview will refresh when ready.');
@@ -48,6 +50,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       const block = source.split('\n').slice(node.position.start.line - 1, node.position.end.line).join('\n');
       if (/^\s*>\s*\[!/.test(block)) node._obsidianSource = block;
     });
+    normalizeGlossaries(tree, source, body => mystParse(body, parseOptions), vfile);
     basicTransformations(tree, vfile);
     glossaryTransform(tree, vfile);
     abbreviationTransform(tree, { abbreviations: project.abbreviations });
@@ -139,9 +142,11 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         node.children?.forEach(child => prepare(child as Node, childEnv, [...stack, included.file]));
         return;
       }
+      node.aliasNodes?.forEach((alias: Node) => prepare(alias, environment, stack));
       node.children?.forEach(child => prepare(child as Node, environment, stack));
     };
     prepare(tree, env, file ? [file] : []);
+    resolveGlossaryAliases(tree);
     const slugger = new GithubSlugger();
     walk(tree, node => { if (node.type === 'heading' && node.implicit) node.html_id = slugger.slug(text(node)); });
     const state = new ReferenceState(file, { vfile, frontmatter: { ...metadata, numbering: validateNumbering(metadata.numbering, { property: 'numbering', messages: {} }) } });
@@ -170,15 +175,18 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       try { for (const entry of new Cite(bib.content).data) bibliography.set(String(entry.id).toLowerCase(), entry); } catch { /* Render unresolved citations below. */ }
     }
     const attr = (node: Node) => `${node.html_id || node.identifier ? ` id="${escape(node.html_id || node.identifier)}"` : ''}${node.class ? ` class="${escape(node.class)}"` : ''}`;
-    const render = (node: Node, stack: string[] = []): string => {
+    const render = (node: Node, stack: string[] = [], preserveLineBreaks = false): string => {
       const environment: RenderEnvironment = environments.get(node) ?? env;
-      const children = () => node.children?.map(child => render(child as Node, stack)).join('') ?? '';
+      const children = () => node.children?.map(child => render(child as Node, stack, preserveLineBreaks)).join('') ?? '';
       const tag = (name: string, attributes = attr(node)) => `<${name}${attributes}>${children()}</${name}>`;
       if (node._obsidianSource) return nativeRender(node._obsidianSource, environment);
       try {
       switch (node.type) {
         case 'root': return children();
-        case 'text': return /\[\[|==|%%/.test(node.value ?? '') ? nativeInline(node.value, environment) : escape(node.value);
+        case 'text': {
+          const lines = preserveLineBreaks ? String(node.value ?? '').split(/\r?\n/) : [node.value ?? ''];
+          return lines.map(value => /\[\[|==|%%/.test(value) ? nativeInline(value, environment) : escape(value)).join('<br>');
+        }
         case 'paragraph': return /^\s*!\[\[[^\n]+\]\]\s*$/.test(text(node)) ? nativeRender(text(node), environment) : tag('p');
         case 'block': return tag('div', ` class="myst-block ${escape(node.class ?? '')}"${node.html_id || node.identifier ? ` id="${escape(node.html_id || node.identifier)}"` : ''}`);
         case 'heading': return tag(`h${Math.min(6, Math.max(1, node.depth))}`);
@@ -210,9 +218,12 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         case 'list': return tag(node.ordered ? 'ol' : 'ul', attr(node) + (node.ordered && node.start ? ` start="${Number(node.start)}"` : ''));
         case 'listItem': return `<li>${node.checked == null ? '' : `<input type="checkbox" disabled${node.checked ? ' checked' : ''}> `}${children()}</li>`;
         case 'definitionList': return tag('dl');
-        case 'definitionTerm': return tag('dt');
+        case 'definitionTerm': return `<dt${attr(node)}>${children()}${(node.aliasNodes ?? []).map((alias: Node) => `<br><span class="myst-term-alias">${alias.children?.map(child => render(child, stack)).join('') ?? ''}</span>`).join('')}</dt>`;
         case 'definitionDescription': return tag('dd');
-        case 'glossary': return tag('div', ' class="myst-glossary"');
+        case 'glossary':
+          // Indented glossary syntax can remain paragraphs in the official AST.
+          // Keep their source lines visible instead of collapsing term aliases.
+          return `<div class="myst-glossary">${node.children?.map(child => render(child as Node, stack, child.type === 'paragraph')).join('') ?? ''}</div>`;
         case 'link': {
           const target = node.url?.startsWith('#') ? state.getTarget(node.url.slice(1))?.node : undefined;
           return `<a href="${escape(safeUrl(node.url ?? ''))}"${node.title ? ` title="${escape(node.title)}"` : ''}>${children() || (target ? escape(`${target.type === 'container' ? target.kind : target.type} ${target.enumerator ?? target.label ?? ''}`) : '')}</a>`;

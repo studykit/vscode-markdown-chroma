@@ -8,6 +8,7 @@ import { JSDOM } from 'jsdom';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 import { verifyPreviewPlugins } from './preview-plugins-integration';
+import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
 
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension('studykit.markdown-chroma');
@@ -338,6 +339,10 @@ export async function run(): Promise<void> {
     await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
   }
   console.log('PASS: shared preview maxEmbedDepth setting limits and restores both Obsidian embeds and MyST includes');
+  const glossaryInput = { uri: vscode.Uri.file(path.join(mystRoot, 'glossary-line-breaks.md')), version: -1, getText: () => glossaryLineBreakSource };
+  const glossaryHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', glossaryInput))!;
+  assertGlossaryLineBreaks(new JSDOM(glossaryHtml).window.document);
+  console.log('PASS: native preview renders canonical glossary terms, aliases and alias references while preserving ordinary prose formatting');
   for (const name of ['index', 'layout', 'syntax']) {
     const doc = await vscode.workspace.openTextDocument(path.join(mystRoot, `${name}.md`));
     const html = (await vscode.commands.executeCommand<string>('markdown.api.render', doc))!;

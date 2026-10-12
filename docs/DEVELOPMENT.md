@@ -19,7 +19,7 @@ Build and package a VS Code extension:
 npm run package
 ```
 
-The current manifest produces `artifacts/markdown-chroma-0.1.0.vsix`. Install it with VS Code's `Extensions: Install from VSIX...` command. Keep artifact names and documentation aligned with `package.json` when changing the version.
+The current manifest produces `artifacts/markdown-chroma-0.1.1.vsix`. Install it with VS Code's `Extensions: Install from VSIX...` command. Keep artifact names and documentation aligned with `package.json` when changing the version.
 
 For CLI development, run a built entry point directly:
 
@@ -35,7 +35,7 @@ To create and install the npm archive:
 
 ```sh
 npm pack
-npm install -g ./markdown-chroma-0.1.0.tgz
+npm install -g ./markdown-chroma-0.1.1.tgz
 ```
 
 `npm pack` invokes the build through `prepack`. Generated bundles, archives, and VSIX files are ignored by Git.
@@ -69,7 +69,7 @@ Choose verification according to the change:
 | VS Code activation, document context, file watching, and preview refresh | `src/extension.ts` |
 | Obsidian Markdown parsing and rendering | `src/markdown.ts`, `src/footnotes.ts`, `src/frontmatter.ts`, `src/callout-icons.ts` |
 | Preview document lookup, aliases, and file access | `src/vault.ts` |
-| MyST rendering, references, and optional configuration | `src/myst.ts`, `src/references.ts`, `src/myst-config.ts` |
+| MyST rendering, references, optional configuration, and shared glossary normalization | `src/myst.ts`, `src/references.ts`, `src/myst-config.ts`, `src/glossary.ts` |
 | Opt-in MyST preview plugin lifecycle, diagnostics, isolated parsing, and local module loading | `src/myst-options.ts`, `src/preview-plugins/manager.ts`, `src/preview-plugins/events.ts`, `src/preview-plugins/diagnostics.ts`, `src/preview-plugins/worker.ts`, `src/preview-plugins/loader.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
 | Persistent indexing, parsing, static plugin inspection, source reads, records, shared queries, batch reads, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/plugins.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/batch.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |

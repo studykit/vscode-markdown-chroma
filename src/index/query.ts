@@ -1,5 +1,5 @@
 import * as z from 'zod/v4';
-import { termIdentifier } from './parser';
+import { matchesTermName } from './terms';
 import { MarkdownIndex, unresolved } from './project';
 import { readBatch } from './batch';
 import { expandDirective, type ExpansionOptions } from './expansion';
@@ -148,7 +148,7 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
         if (matches.length !== 1) throw new IndexError('glossaryNotFound', 'Use a glossary ID from the glossaries list.');
         glossaryId = matches[0].id;
       }
-      return envelope({ terms: scope.flatMap(d => d.terms).filter(term => (!glossaryId || term.glossaryId === glossaryId) && (!args.name || term.identifier === termIdentifier(args.name))) });
+      return envelope({ terms: scope.flatMap(d => d.terms).filter(term => (!glossaryId || term.glossaryId === glossaryId) && (!args.name || matchesTermName(term, args.name))) });
     }
     case 'read-term':
     case 'read-glossary':
@@ -174,7 +174,7 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
       }
       const selectionIds = args.ids ?? glossaryIds;
       const selectors = selectionIds ?? termArgs!.names!;
-      const candidates = (selector: string) => terms.filter(t => t.identifier === termIdentifier(selector) && (!file || t.file === file));
+      const candidates = (selector: string) => terms.filter(t => matchesTermName(t, selector) && (!file || t.file === file));
       const pool = query.command === 'read-term' ? terms : query.command === 'read-glossary' ? glossaries : [...terms, ...glossaries];
       const selected = selectors.map(selector => {
         if (selectionIds) return pool.find(item => item.id === selector);

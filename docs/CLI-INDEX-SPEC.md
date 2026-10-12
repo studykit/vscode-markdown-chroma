@@ -13,7 +13,7 @@ Status: specification for the implemented CLI v1 behavior. Default CLI text, CLI
 - Keep default CLI text, CLI `--json`, and MCP responses focused on finding, selecting, and reading content. Retain full index records in the Node API and explicit CLI `--debug` output.
 - List section titles as an outline by default and extract selected sections by title or full heading path. Read term definitions by name and whole glossaries by their owning section title. Retain ID/label selectors for ambiguity and detailed records through `--debug`.
 - List tables and images.
-- Index MyST `glossary` blocks and term definitions, and resolve `{term}` references.
+- Index MyST `glossary` blocks and term definitions, and resolve `{term}` references. Indented definitions with consecutive names register the first name as canonical and the remaining names as aliases of the same definition. Lists expose aliases when present; name filters, term reads, batch term selections and references match both canonical names and aliases using MyST normalization. Ambiguous matches remain explicit. Source ranges include all authored names and the shared definition; aliases do not increase the glossary term count.
 - List glossaries and terms across the root without requiring a file argument. Read definition source directly by term name or by an ID returned in a list.
 - Read multiple selected term definitions or entire glossaries, including requests that select both kinds of item.
 - Do not create independent index items for MyST layout directives. Continue collecting indexable content inside them.

@@ -16,10 +16,10 @@ markdown-chroma --help
 This installs both `markdown-chroma` and `markdown-chroma-mcp` from the same package. To run the CLI without a global installation:
 
 ```sh
-npx --yes markdown-chroma@0.1.0 notes --root ./notes
+npx --yes markdown-chroma@0.1.1 notes --root ./notes
 ```
 
-Use a specific version in automated setups. You can also install a downloaded archive with `npm install -g ./markdown-chroma-0.1.0.tgz`. For building from source, see [developer setup](../AGENTS.md).
+Use a specific version in automated setups. You can also install a downloaded archive with `npm install -g ./markdown-chroma-0.1.1.tgz`. For building from source, see [developer setup](../AGENTS.md).
 
 ## Start with your notes folder
 
@@ -142,6 +142,8 @@ Read a definition by the name used in the document:
 markdown-chroma read-term 'Directive' --root ./notes
 markdown-chroma read-term 'Directive' --file glossary.md --root ./notes
 ```
+
+For [indented definitions with multiple names](PREVIEW.md#glossary-aliases), the first name is canonical and later names are aliases. `terms` lists one item per definition with its aliases; `terms --name`, `read-term`, and term selections in `read --select` accept either the canonical name or an alias. All names read the same original source and share `{term}` backlinks. Duplicate names across definitions return ambiguity candidates; narrow by file or select a listed ID.
 
 Use a glossary to keep shared definitions together and refer to them from multiple documents with MyST `{term}`. Reading one term is useful for a specific definition; reading the whole glossary gives the context of related terms. List glossaries, then select one by its owning section title:
 

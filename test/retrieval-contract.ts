@@ -8,7 +8,9 @@ export function assertRetrievalResult(value: unknown): void {
   if (Array.isArray(value)) { for (const item of value) assertRetrievalResult(item); }
   else if (value && typeof value === 'object') {
     for (const [key, item] of Object.entries(value)) {
-      assert.ok(!internal.has(key), `Implementation field exposed: ${key}`);
+      const termAliases = key === 'aliases' && 'name' in value && 'file' in value && 'id' in value
+        && typeof value.id === 'string' && value.id.includes('#term-') && Array.isArray(item) && item.every(alias => typeof alias === 'string');
+      assert.ok(!internal.has(key) || termAliases, `Implementation field exposed: ${key}`);
       assertRetrievalResult(item);
     }
   }

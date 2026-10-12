@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Render indented glossary names on separate lines, with the first name as the canonical term and subsequent names as aliases.
+- Support alias lookup and references across Preview, CLI, the shared API, and MCP while preserving original definition source and backlinks.
+- Report ambiguous aliases and automatically rebuild existing indexes for the updated glossary records.
+
 ## 0.1.0
 
 - Preview Obsidian Markdown with wikilinks, note embeds, foldable callouts, highlights, tags, tasks, and footnotes.

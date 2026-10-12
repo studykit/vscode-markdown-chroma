@@ -15,6 +15,7 @@ import { extract, hash, parseIndex } from './parser';
 import { isExcludedIndexPath } from './paths';
 import { inspectPlugin, type PluginNames } from './plugins';
 import { IndexError, PARSER_VERSION, SCHEMA_VERSION, type ContentItem, type Diagnostic, type DocumentIndex, type ProjectIndex, type Reference, type Resolution, type Section } from './types';
+import { matchesTermIdentifier } from './terms';
 
 export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const key = (value: string) => value.normalize('NFC').toLowerCase();
@@ -178,6 +179,7 @@ export class MarkdownIndex {
         if (typeof doc.file !== 'string' || typeof doc.sourceHash !== 'string' || typeof doc.configHash !== 'string' || !doc.properties || typeof doc.properties !== 'object') return;
         for (const field of ['sections', 'tables', 'images', 'glossaries', 'terms', 'targets', 'outgoing', 'aliases', 'tags', 'diagnostics', 'bibliographyKeys']) if (!Array.isArray(doc[field])) return;
         for (const field of ['sections', 'tables', 'images', 'glossaries', 'terms', 'targets', 'outgoing']) for (const item of doc[field]) if (!Number.isSafeInteger(item.startLine) || !Number.isSafeInteger(item.endLine) || item.startLine < 1 || item.endLine < item.startLine) return;
+        for (const term of doc.terms) if (!Array.isArray(term.aliases) || term.aliases.some((alias: unknown) => typeof alias !== 'string')) return;
       }
       return data;
     } catch { return; }
@@ -318,7 +320,7 @@ export class MarkdownIndex {
       for (const reference of document.outgoing) {
         let result: Resolution;
         if (reference.kind === 'term') {
-          const terms = this.data.documents.flatMap(d => d.terms).filter(term => term.identifier === reference.target);
+          const terms = this.data.documents.flatMap(d => d.terms).filter(term => matchesTermIdentifier(term, reference.target));
           result = terms.length === 1 ? { status: 'found', file: terms[0].file, targetKind: 'term', targetId: terms[0].id, fragmentStatus: 'found' }
             : terms.length ? { status: 'ambiguous', candidates: terms.map(t => t.id) } : { status: 'missing' };
         } else if (reference.kind === 'ref') result = this.labelResolution(reference.target, document.file);

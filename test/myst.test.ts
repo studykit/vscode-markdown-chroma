@@ -6,8 +6,26 @@ import { fixture } from './helpers';
 import { extendMystMarkdown } from '../src/myst';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
+import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
 
 const dom = (html: string) => new JSDOM(html).window.document;
+
+test('indented glossary definitions render canonical terms, aliases and references without changing ordinary prose', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  for (const source of [glossaryLineBreakSource, glossaryLineBreakSource.replace(/\n/g, '\r\n')]) {
+    assertGlossaryLineBreaks(dom(f.render(source)));
+  }
+});
+
+test('glossary alias collisions remain unresolved in preview', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  const doc = dom(f.render(':::{glossary}\nfirst\nShared name\n\n   First definition.\n\nsecond\nShared name\n\n   Second definition.\n:::\n\n{term}`Shared name`'));
+  assert.equal(doc.querySelectorAll('dt').length, 2);
+  assert.equal(doc.querySelector('a[href="#term-first"], a[href="#term-second"]'), null);
+  assert.equal(doc.querySelector('.myst-unresolved')?.textContent, 'Shared name');
+});
 
 test('manual footnote numbers and bracketed references match MyST in both rendering paths', async t => {
   const f = await fixture(t, { 'Main.md': '' });

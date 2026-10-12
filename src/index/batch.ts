@@ -1,4 +1,4 @@
-import { termIdentifier } from './parser';
+import { matchesTermName } from './terms';
 import type { MarkdownIndex } from './project';
 import { IndexError, errorRecord, type ReadSelection, type SelectionInfo, type BatchReadItem } from './types';
 
@@ -26,7 +26,7 @@ export function readBatch(index: MarkdownIndex, selections: ReadSelection[], max
       } else {
         const file = selector.file ? index.document(selector.file).file : undefined;
         const matches = index.data.documents.flatMap(d => d.terms)
-          .filter(t => t.identifier === termIdentifier(selector.name) && (!file || file === t.file));
+          .filter(t => matchesTermName(t, selector.name) && (!file || file === t.file));
         if (matches.length !== 1) throw new IndexError(matches.length ? 'ambiguousTerm' : 'termNotFound',
           matches.length ? `Multiple definitions match: ${selector.name}` : `Term was not found: ${selector.name}`, matches.length ? matches : undefined);
         const term = matches[0];

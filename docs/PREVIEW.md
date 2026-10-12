@@ -122,6 +122,24 @@ Examples: [overview](../examples/myst/index.md), [layouts](../examples/myst/layo
 
 By default, the preview displays local files without executing project code. Automatic DOI or external project lookup, Jupyter execution, `.tex` conversion, PDF/EPS/TIFF image conversion, and PDF/Word publishing are outside its scope. External iframes appear as links under the built-in Preview's security policy. Invalid or unsupported directives display an error message. Frontmatter and Obsidian footnotes retain their existing presentation.
 
+### Glossary aliases
+
+Indented glossary definitions can use several names on consecutive lines. The first name is the canonical term; later names are aliases. Preview shows each name on its own line, and `{term}` references to any name navigate to the same definition:
+
+```markdown
+:::{glossary}
+cache-node
+캐시 노드
+Cache worker
+
+   A component that keeps temporary records.
+:::
+
+{term}`캐시 노드` and {term}`worker <Cache worker>`
+```
+
+Keep all names at the same indentation as the glossary fence and indent the shared definition. Standard `Term` followed by `: Definition` remains supported. Alias matching uses MyST's label normalization. A name shared by multiple definitions is ambiguous.
+
 ### Project-defined MyST plugins
 
 Local JavaScript plugins can generate Preview content through MyST's public directive and role APIs. Open the project folder, trust the workspace in VS Code, and enable **Markdown Chroma: Preview: Project Plugins** in Settings:

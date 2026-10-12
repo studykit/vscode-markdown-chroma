@@ -42,10 +42,10 @@ markdown-chroma mcp --root /absolute/path/to/notes
 You can also run it without a global installation:
 
 ```sh
-npx --yes --package markdown-chroma@0.1.0 markdown-chroma-mcp --root /absolute/path/to/notes
+npx --yes --package markdown-chroma@0.1.1 markdown-chroma-mcp --root /absolute/path/to/notes
 ```
 
-Use a specific version in automated setups. `markdown-chroma-mcp` is an executable included in `markdown-chroma`, not a separate npm package. A downloaded archive can be installed with `npm install -g ./markdown-chroma-0.1.0.tgz`.
+Use a specific version in automated setups. `markdown-chroma-mcp` is an executable included in `markdown-chroma`, not a separate npm package. A downloaded archive can be installed with `npm install -g ./markdown-chroma-0.1.1.tgz`.
 
 For a build from source, use `node dist/mcp.cjs` with the same options. See [developer setup](../AGENTS.md).
 
@@ -74,7 +74,7 @@ In VS Code, run **MCP: Open User Configuration** and add this to the `servers` o
 
 Replace the root with your folder. If the client cannot find the executable, use its absolute installed path; on macOS/Linux, find it with `command -v markdown-chroma-mcp`. Other clients may use a different configuration format with the same command and arguments.
 
-For a client that launches through `npx`, use `"command": "npx"` and `"args": ["--yes", "--package", "markdown-chroma@0.1.0", "markdown-chroma-mcp", "--root", "/absolute/path/to/notes"]` instead.
+For a client that launches through `npx`, use `"command": "npx"` and `"args": ["--yes", "--package", "markdown-chroma@0.1.1", "markdown-chroma-mcp", "--root", "/absolute/path/to/notes"]` instead.
 
 Run **MCP: List Servers**, select the server, and start it. If you use manual setup alongside the extension, set `markdownChroma.mcp.enabled` to `false` for that workspace folder to avoid two servers for the same project. See [VS Code's MCP configuration guide](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
 
@@ -150,7 +150,7 @@ File arguments are exact paths relative to the server root. Optional arguments m
 | `list_tables` | `file`, `section` | Captions, headers, and owning heading paths |
 | `list_images` | `file`, `section` | Sources, alt text, captions, and owning heading paths |
 | `list_glossaries` | `file` | Glossary choices and term counts |
-| `list_terms` | `file`, `glossary`, `name` | Term names, files, and IDs for reading |
+| `list_terms` | `file`, `glossary`, `name` | Canonical term names, aliases when present, files, and IDs; `name` also matches aliases |
 | `read_terms` | **`names` or `ids`**, `file`, `sourceHash` | Multiple selected definitions; `file` applies only to name selection |
 | `read_glossaries` | **`ids` or `file` with `title` or `headingPath`** | Original Markdown for selected glossaries; titles select the owning section |
 | `read_items` | **`selections` or `ids`**, `maxChars` | Budgeted sections/terms by natural names, or legacy term/glossary IDs |
@@ -210,7 +210,7 @@ For example, `list_sections` returns:
 
 Read a listed title with `read_section({"file":"guide.md","title":"macOS"})`. A successful read returns the file and original Markdown `content`. Term/glossary batch reads return each item's kind, file, name when available, and content. Ambiguous reads provide concise `candidates` for explicit selection. CLI `--json` uses this same retrieval format. Full records remain available through the Node API and CLI `--debug`; MCP does not return them.
 
-Ambiguous term names return `ambiguousTerm` with candidates; choose a file or a global ID. Batch selections preserve request order and deduplicate identical selections. Selecting a glossary and one of its terms returns both.
+Term names in `read_terms` and `read_items` also accept glossary aliases. All names resolve to the canonical definition and read its original source. Ambiguous canonical names or aliases return `ambiguousTerm` with candidates; choose a file or a global ID. Batch selections preserve request order and deduplicate identical selections. Selecting a glossary and one of its terms returns both.
 
 Queries use saved files. They do not read unsaved editor contents. Requests and background refreshes are serialized on the same service; structural queries in separate CLI/server processes share cache locks. Line reads do not acquire those locks. Cancellation can stop a lock wait but does not interrupt synchronous parsing already in progress. Structural refresh cost grows with the root size. Structural lists do not provide pagination.
 

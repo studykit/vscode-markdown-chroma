@@ -1,6 +1,6 @@
 /** Persisted records contain structure and references, never the document body. */
 export const SCHEMA_VERSION = 1;
-export const PARSER_VERSION = 'myst-parser@1.7.4/chroma-index@3';
+export const PARSER_VERSION = 'myst-parser@1.7.4/chroma-index@4';
 export interface Diagnostic { code: string; message: string; file?: string; line?: number; severity: 'warning' | 'error' }
 export interface Range { startLine: number; endLine: number }
 export interface Section extends Range {
@@ -18,7 +18,7 @@ export interface Image extends ContentItem {
   figure: { id: string; labels: string[]; caption: string | null } | null;
 }
 export interface Glossary extends ContentItem { localId: string; name: string | null; termCount: number }
-export interface Term extends ContentItem { localId: string; identifier: string; name: string; glossaryId: string }
+export interface Term extends ContentItem { localId: string; identifier: string; name: string; aliases: string[]; glossaryId: string }
 export type ReadSelection = { kind: 'section'; file: string; title?: string; headingPath?: string[]; id?: string;
   label?: string; line?: number; includeChildren?: boolean; sourceHash?: string }
   | { kind: 'term'; name: string; file?: string; sourceHash?: string };

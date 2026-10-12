@@ -11,6 +11,7 @@ import { proofDirective } from 'myst-ext-proof';
 import { exerciseDirectives } from 'myst-ext-exercise';
 import { buttonRole } from 'myst-ext-button';
 import { parseFrontmatter } from '../frontmatter';
+import { glossaryIdentifier, normalizeGlossaries } from '../glossary';
 import type { PluginNames } from './plugins';
 import { globalId, normalizeTag, type ContentItem, type DocumentIndex, type Reference, type Section, type Table, type Target } from './types';
 
@@ -27,7 +28,7 @@ const text = (node: Node): string => {
   return node.value ?? node.children?.map(text).join('') ?? '';
 };
 export const hash = (value: string | Buffer) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
-export const termIdentifier = (name: string) => `term-${normalizeLabel(name)?.identifier ?? ''}`;
+export const termIdentifier = glossaryIdentifier;
 const labelIdentifier = (name: string) => normalizeLabel(name)?.identifier ?? name;
 function all(node: Node, type: string): Node[] { return [...(node.type === type ? [node] : []), ...(node.children?.flatMap(child => all(child, type)) ?? [])]; }
 /** MyST +++ blocks contain document-level headings; directive and quote headings remain local. */
@@ -134,16 +135,22 @@ export function parseIndex(file: string, source: string, settings: Record<string
   const options = { directives, roles: [buttonRole], extensions: { frontmatter: false, strikethrough: true,
     math: settings.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile };
   const tree = mystParse(body, options) as Node;
+  normalizeGlossaries(tree, body, source => mystParse(source, options) as Node, vfile);
   glossaryTransform(tree, vfile);
   const processedDirectives = new Map(all(tree, 'mystDirective').map(node => [`${node.position?.start.line}:${node.name}`, node]));
   const processedTerms = new Map(all(tree, 'definitionTerm').filter(node => node.identifier).map(node => [node.position?.start.line, node]));
   const md = indexTokenizer(options, body);
-  const raw = tokensToMyst(body, md.parse(body, { vfile }), { handlers: {
+  const handlers = {
     chroma_wiki: { type: 'obsidianReference', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => token.meta },
     chroma_tag: { type: 'obsidianTag', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => token.meta },
     link: { type: 'link', getAttrs: (token: any) => ({ url: token.attrGet('href'), chromaOffset: token.meta?.chromaOffset, chromaSource: token.meta?.chromaSource }) },
     image: { type: 'image', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => ({ url: token.attrGet('src'), alt: token.content }) },
-  } }) as Node;
+  };
+  const raw = tokensToMyst(body, md.parse(body, { vfile }), { handlers }) as Node;
+  normalizeGlossaries(raw, body, source => {
+    const tokenizer = indexTokenizer(options, source);
+    return tokensToMyst(source, tokenizer.parse(source, { vfile }), { handlers }) as Node;
+  }, vfile);
   const pluginDirectives = new Set(plugins?.directives), pluginRoles = new Set(plugins?.roles);
   for (const message of vfile.messages) {
     const extension = /^unknown (directive|role): (.+)$/.exec(message.message);
@@ -285,7 +292,7 @@ export function parseIndex(file: string, source: string, settings: Record<string
             const next = children.slice(firstDescription).find(n => n.type === 'definitionTerm');
             let endLine = Math.min(next ? range(next).startLine - 1 : bounds.endLine - 1, Math.max(...descriptions.map(n => range(n).endLine)));
             while (endLine > range(term).startLine && !lines[endLine - 1]?.trim()) endLine--;
-            document.terms.push({ ...common(term, globalId(file, id)), endLine, localId: id, identifier, name, glossaryId: item.id }); item.termCount++;
+            document.terms.push({ ...common(term, globalId(file, id)), endLine, localId: id, identifier, name, aliases: parsedTerm?.aliases ?? term.aliases ?? [], glossaryId: item.id }); item.termCount++;
           }
         }
         for (const label of item.labels) addTarget(label, 'glossary', item.id, bounds);
