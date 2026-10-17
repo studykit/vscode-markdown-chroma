@@ -1,11 +1,25 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { JSDOM } from 'jsdom';
+import { JSDOM, VirtualConsole } from 'jsdom';
 
 const previewScript = () => readFileSync('dist/preview.js', 'utf8');
 const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 const iconCallout = '<details class="callout obsidian-callout" data-callout="custom"><summary class="obsidian-callout-title"><span class="obsidian-callout-icon"><svg viewBox="0 0 24 24"><path d="M1 1h2"/></svg></span><span>Title</span></summary><p>Body</p></details>';
+
+test('page load leaves Mermaid source and diagrams owned by other preview renderers unchanged', async () => {
+  const html = '<pre class="mermaid">sequenceDiagram\n  Reader->>Service: Open document</pre>' +
+    '<div class="mermaid"><svg xmlns="http://www.w3.org/2000/svg"><text>Previously rendered diagram</text></svg></div>';
+  const page = new JSDOM(html, { runScripts: 'outside-only', virtualConsole: new VirtualConsole() });
+  try {
+    const before = page.window.document.body.innerHTML;
+    page.window.eval(previewScript());
+    page.window.dispatchEvent(new page.window.Event('load'));
+    await tick();
+    assert.equal(page.window.document.body.innerHTML, before);
+    assert.equal(page.window.document.querySelector('[data-processed]'), null);
+  } finally { page.window.close(); }
+});
 
 test('folding works with keyboard-native details and survives content replacement', async () => {
   const callout = '<details class="obsidian-callout" data-callout="note"><summary>Title</summary><p>Body</p></details>';

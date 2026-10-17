@@ -4,6 +4,9 @@ import mermaid from 'mermaid';
 (() => {
   if (window.__obsidianMarkdownPreview) return;
   window.__obsidianMarkdownPreview = true;
+  // Mermaid registers a load handler for every .mermaid element on import.
+  // VS Code owns those diagrams; render only our .myst-mermaid nodes below.
+  mermaid.startOnLoad = false;
   // Built-in previews replace their body on updates. Preserve user folding choices.
   const folds = new Map();
   const appliedIcons = new WeakMap();
