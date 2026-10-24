@@ -7,7 +7,7 @@ Markdown Chroma renders Obsidian Markdown and MyST / Jupyter Book 2 in VS Code's
 - Write `README.md`, `AGENTS.md`, and developer guides in English.
 - Keep the README user-facing. Start with ordinary Markdown folders and describe Obsidian Markdown rendering explicitly; an Obsidian vault is optional.
 - Keep this file a concise entry point. Put subsystem implementation details in the guides below.
-- Use the official, pinned MyST packages through public extension points; do not patch or fork dependencies.
+- Use the official, pinned MyST packages. The sole approved dependency patch exports the unchanged `applyDirectives` and `applyRoles` functions from `myst-parser@1.7.4` for the shared preview tokenizer; do not otherwise patch or fork dependencies.
 - Preserve document-root, traversal, symlink, size, and cycle checks. Preview can use unsaved open documents; CLI and MCP use saved files.
 - Ordinary rendering, indexing, and reads do not execute document code. Preview project plugins require workspace trust and explicit opt-in; CLI/MCP plugin expansion requires a separate launch opt-in. Workers are not permission sandboxes.
 - Keep CLI and MCP on the same root-bound `IndexService`, with original source content and concise retrieval responses.

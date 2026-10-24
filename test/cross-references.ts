@@ -56,7 +56,7 @@ This is just a paragraph!
 
 export function assertCrossReferences(document: Document): void {
   const texts = (id: string) => [...document.querySelectorAll(`a[href="#${id}"]`)].map(link => link.textContent?.replace(/\s+/g, ' '));
-  assert.deepEqual(texts('section'), ['Section 1', 'Section 1', 'Section 1', 'Sec. 1', 'Section “Header Targets”']);
+  assert.deepEqual(texts('section'), ['Section 1', 'Section 1', 'Section 1', 'Sec. 1', 'Section "Header Targets"']);
   assert.deepEqual(texts('figure'), ['Figure 1', 'Figure 1', 'Fig. 1', 'Figure 1: My bold caption.', 'Literal %s']);
   assert.deepEqual(texts('equation'), ['(1)', '(1)', '(1)']);
   assert.deepEqual(texts('table'), ['Table 1', 'Table 1', 'Table 1']);

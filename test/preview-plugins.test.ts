@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { PreviewPluginManager } from '../src/preview-plugins/manager';
 import { extendMystMarkdown } from '../src/myst';
 import { fixture } from './helpers';
+import { JSDOM } from 'jsdom';
 
 const plugin = `import { u } from 'unist-builder';
 import { mystParse } from 'myst-parser';
@@ -14,7 +15,7 @@ export default {
   directives: [{ name: 'demo:generated', alias: ['demo:generated-alias'], arg: { type: String, required: true },
     options: { suffix: { type: String, alias: ['ending'] } }, body: { type: 'myst' },
     run(data) { return [u('heading', { depth: 2, identifier: 'generated-target' }, [u('text', data.arg)]),
-      u('paragraph', [u('text', data.options.suffix ?? '')]), ...data.body,
+      u('paragraph', [u('text', data.options?.suffix ?? '')]), ...data.body,
       ...mystParse('**Bundled parser works**').children,
       u('paragraph', [u('text', defaultDirectives.find(d => d.name === 'code').name)])]; }
   }],
@@ -31,6 +32,21 @@ async function renderReady(render: () => string) {
   assert.doesNotMatch(html, /Loading MyST project plugins/, 'Plugin render completes');
   return html;
 }
+
+test('plugin bodies use the unified tokenizer for formatted highlights, callouts and inline footnotes', async t => {
+  const f = await fixture(t, { 'Main.md': '', 'myst.yml': 'project:\n  plugins: [plugin.mjs]\n', 'plugin.mjs': plugin });
+  const manager = new PreviewPluginManager(() => {}, path.join(__dirname, '../preview-plugin-worker.cjs'));
+  t.after(() => manager.dispose());
+  f.host.parseMystPlugins = (input, file, project) => manager.parse(input, file, f.root, project, true, true);
+  extendMystMarkdown(f.md, f.host);
+  const html = await renderReady(() => f.render(':::{demo:generated} Title\n==**Nested** {kbd}`Ctrl`==\n\n> [!tip] {kbd}`Enter`\n> Body^[Inline note].\n:::\n\nOutside[^n].\n\n[^n]: Named note.'));
+  const document = new JSDOM(html).window.document;
+  assert.equal(document.querySelector('mark strong')?.textContent, 'Nested', html);
+  assert.equal(document.querySelector('mark kbd')?.textContent, 'Ctrl');
+  assert.equal(document.querySelector('.obsidian-callout-title kbd')?.textContent, 'Enter');
+  assert.equal(document.querySelectorAll('.footnote-item').length, 2);
+  assert.equal(document.querySelector('.myst-error'), null);
+});
 
 test('opt-in and workspace trust gate all project plugin execution', async t => {
   const f = await fixture(t, { 'Main.md': '', 'myst.yml': 'project:\n  plugins: [plugin.mjs]\n', 'plugin.mjs': `import { writeFileSync } from 'node:fs'; writeFileSync(new URL('./executed', import.meta.url), 'yes'); ${plugin}` });

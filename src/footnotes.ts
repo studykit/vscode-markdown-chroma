@@ -53,7 +53,15 @@ export function footnoteBacklinks(references: { anchor: string }[]): string {
 }
 
 /** Obsidian reference and inline footnotes, with no separate footnote dependency. */
-export function installFootnotes(md: MarkdownIt): void {
+export function installFootnotes(md: MarkdownIt, nestedParsing = false): void {
+  let parseDepth = 0;
+  if (nestedParsing) {
+    const parse = md.parse.bind(md);
+    md.parse = (source, env) => {
+      parseDepth++;
+      try { return parse(source, env); } finally { parseDepth--; }
+    };
+  }
   md.core.ruler.before('block', 'obsidian_footnote_setup', state => {
     // Other Markdown extensions may register these rules after this extension.
     // Disable them at parse time so only one parser owns numbering and footers.
@@ -61,7 +69,9 @@ export function installFootnotes(md: MarkdownIt): void {
     md.inline.ruler.disable(['footnote_inline', 'footnote_ref'], true);
     md.core.ruler.disable('footnote_tail', true);
     state.env.footnotes = undefined;
-    state.env.obsidianFootnotes = newFootnotes();
+    // MyST's directive tokenizer recursively parses with the same environment.
+    // The outer parse owns definitions and numbering for all nested bodies.
+    if (!nestedParsing || !state.env.obsidianFootnotes) state.env.obsidianFootnotes = newFootnotes();
   });
 
   md.block.ruler.before('reference', 'obsidian_footnote_definition', (state, startLine, endLine, silent) => {
@@ -132,6 +142,9 @@ export function installFootnotes(md: MarkdownIt): void {
   });
 
   md.core.ruler.after('inline', 'obsidian_footnote_tail', state => {
+    // Recursive role/option parses must not append a document footer. In
+    // particular, an extra footer prevents MyST from recognizing inline bodies.
+    if (nestedParsing && parseDepth !== 1) return;
     const notes = footnotesFor(state.env);
     state.tokens = state.tokens.filter(token => token.type !== 'obsidian_footnote_definition');
     if (!notes.entries.length) return;
@@ -141,16 +154,24 @@ export function installFootnotes(md: MarkdownIt): void {
       const open = new state.Token('obsidian_footnote_open', '', 1);
       open.meta = { id, entry };
       state.tokens.push(open);
-      const body: Token[] = [];
-      md.block.parse(entry.source, md, state.env, body);
+      const body: Token[] = nestedParsing ? md.parse(entry.source, state.env) : [];
+      if (!nestedParsing) md.block.parse(entry.source, md, state.env, body);
       for (const token of body) {
-        if (token.type === 'inline') {
+        if (!nestedParsing && token.type === 'inline') {
           token.children = [];
           md.inline.parse(token.content, md, state.env, token.children);
         }
         if (token.map) token.map = entry.line === undefined ? null : [token.map[0] + entry.line, token.map[1] + entry.line];
       }
-      state.tokens.push(...body.filter(token => token.type !== 'obsidian_footnote_definition'));
+      const content = body.filter(token => token.type !== 'obsidian_footnote_definition');
+      const backlink = new state.Token('obsidian_footnote_backlinks', '', 0);
+      backlink.meta = { id, entry };
+      // Keep the return links inside the final paragraph. Block-only notes
+      // retain their block structure and put the links after it.
+      const last = content.at(-1);
+      if (last?.type === 'paragraph_close') content.splice(content.length - 1, 0, backlink);
+      else content.push(backlink);
+      state.tokens.push(...content);
       const close = new state.Token('obsidian_footnote_close', '', -1);
       close.meta = { id, entry };
       state.tokens.push(close);
@@ -177,10 +198,11 @@ export function installFootnotes(md: MarkdownIt): void {
     const number = (token.meta.entry as Entry).number;
     return `<li id="fn${id}" class="footnote-item"><span class="obsidian-footnote-number">${number}.</span><div class="obsidian-footnote-content">`;
   };
-  md.renderer.rules.obsidian_footnote_close = (tokens, index, _options, env: Environment) => {
+  md.renderer.rules.obsidian_footnote_backlinks = (tokens, index, _options, env: Environment) => {
     const token = tokens[index];
     const id = anchor(token, env);
     const references = Array.from({ length: (token.meta.entry as Entry).references }, (_, subId) => ({ anchor: `fnref${id}${subId ? `:${subId}` : ''}` }));
-    return `${footnoteBacklinks(references)}</div></li>\n`;
+    return footnoteBacklinks(references);
   };
+  md.renderer.rules.obsidian_footnote_close = () => '</div></li>\n';
 }

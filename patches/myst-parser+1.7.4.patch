@@ -1,0 +1,24 @@
+diff --git a/node_modules/myst-parser/dist/index.d.ts b/node_modules/myst-parser/dist/index.d.ts
+index b0e20e3..23d5a82 100644
+--- a/node_modules/myst-parser/dist/index.d.ts
++++ b/node_modules/myst-parser/dist/index.d.ts
+@@ -2,5 +2,7 @@ import * as plugins from './plugins.js';
+ export * from './myst.js';
+ export * from './fromMarkdown.js';
+ export { tokensToMyst } from './tokensToMyst.js';
++export { applyDirectives } from './directives.js';
++export { applyRoles } from './roles.js';
+ export { plugins };
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/myst-parser/dist/index.js b/node_modules/myst-parser/dist/index.js
+index 2204fb4..239927b 100644
+--- a/node_modules/myst-parser/dist/index.js
++++ b/node_modules/myst-parser/dist/index.js
+@@ -2,4 +2,6 @@ import * as plugins from './plugins.js';
+ export * from './myst.js';
+ export * from './fromMarkdown.js';
+ export { tokensToMyst } from './tokensToMyst.js';
++export { applyDirectives } from './directives.js';
++export { applyRoles } from './roles.js';
+ export { plugins };

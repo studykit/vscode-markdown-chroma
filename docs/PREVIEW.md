@@ -102,13 +102,15 @@ Unsaved changes in open notes are included in embeds. File creation, modificatio
 
 Render MyST directly in the built-in Markdown Preview. If a `myst.yml` file is present, the nearest configuration supplies project settings for math macros, numbering, abbreviations, bibliography, and parser options. Document frontmatter overrides project settings, and local `extends` is supported. Without a configuration file, the preview uses defaults. No project setup, separate server, or Node/npm installation is needed for the extension.
 
+Every preview uses the same MyST parser with Obsidian syntax enabled, including ordinary Markdown without project configuration. Dollar math (`$x$`), definition lists, and `%` line comments work on their own. Obsidian highlights, tags, callouts, wikilinks, and inline footnotes also work inside MyST directives and alongside roles. Quotes stay as written, and single line breaks follow `markdown.preview.breaks`. CLI and MCP saved-source retrieval are unchanged.
+
 | Syntax | Preview behavior |
 | --- | --- |
 | Typography, blocks, and inline options | Roles, YAML/colon/inline directive options, labels, div/span, comments, and block metadata |
 | Callouts and admonitions | Nested callouts and collapsible dropdowns |
 | Images, figures, and videos | Image dimensions and alignment, captions, numbering, references, MP4, and local image wildcards |
 | Math and equations | KaTeX math, labels, and equation references |
-| Tables and code | Tables, list-table, code, and captions |
+| Tables and code | Tables, list-table, code, and captions; table/code captions appear above their content |
 | Cross-references | In-document `[](#label)`, `@label`, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Document links use standard Markdown navigation; content hover popups are not supported |
 | Embeds and includes | Local include/literalinclude, label embeds, and saved Jupyter notebook outputs |
 | Citations and bibliography | Local BibTeX files selected by frontmatter or a bibliography directive |
@@ -117,6 +119,7 @@ Render MyST directly in the built-in Markdown Preview. If a `myst.yml` file is p
 | Asides and margins | aside/margin/sidebar/topic; placed in the document flow in narrow previews |
 | Grids, tabs, and cards | Responsive grids, interactive tabs, and cards |
 | Glossaries, terms, and index | Glossary/term references and index metadata |
+| Contents, dropdowns, and chemistry | `{toc}` links to headings in the rendered document; `{dropdown}` renders a native disclosure; `{chem}` formats formula subscripts |
 
 Examples: [overview](../examples/myst/index.md), [layouts](../examples/myst/layout.md), [syntax](../examples/myst/syntax.md), and [glossaries](../examples/myst/glossary.md). The glossary example covers multiple glossaries, `{term}` references, custom display text, and references placed before definitions. See the official [MyST authoring guide](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), and [figures](https://mystmd.org/guide/figures) documentation for syntax.
 
@@ -216,3 +219,16 @@ def greet(name):
 ```
 
 This also works in MyST tabs, admonitions, and `{code}` directives. Common language names and aliases include `python` / `py`, `javascript` / `js`, `typescript`, `json`, `jsonc`, `bash`, `html`, `css`, and `sql`. The available languages follow the VS Code version you use. Fences with no language or an unknown language display escaped plain text. Preview colors may differ from the editor's syntax colors.
+
+MyST code directives support `:linenos:`, `:lineno-start:`, and `:emphasize-lines:` while retaining VS Code syntax highlighting. For example:
+
+````markdown
+```{code-block} python
+:linenos:
+:lineno-start: 7
+:emphasize-lines: 2
+:caption: Greeting
+def greet(name):
+    return "Hello " + name
+```
+````

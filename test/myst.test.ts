@@ -9,8 +9,57 @@ import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from
 import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
 import { obsidianBlockSource, assertObsidianBlocks } from './obsidian-blocks';
 import { findSection } from '../src/references';
+import { unifiedPreviewSource, assertUnifiedPreview } from './unified-preview';
+import { codeLines } from '../src/code-lines';
 
 const dom = (html: string) => new JSDOM(html).window.document;
+
+test('all Markdown uses MyST and Obsidian syntax composes with directives and roles', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  assertUnifiedPreview(dom(f.render(unifiedPreviewSource)));
+  const plain = dom(f.render('% hidden\n\n$x$\n\nTerm\n: Definition'));
+  assert.ok(plain.querySelector('.katex'));
+  assert.equal(plain.querySelector('dd')?.textContent, 'Definition');
+  assert.doesNotMatch(plain.body.textContent ?? '', /hidden/);
+  assert.equal(dom(f.render('"straight quotes"')).querySelector('p')?.textContent, '"straight quotes"');
+  assert.equal(dom(f.render('escaped \\==literal\\== and `==code==`')).querySelector('mark'), null);
+  assert.equal(dom(f.render('[local](file:///tmp/note.md)')).querySelector('a')?.getAttribute('href'), 'file:///tmp/note.md');
+  assert.equal(dom(f.render('[unsafe](javascript:alert%281%29)')).querySelector('a'), null);
+  f.md.options.breaks = true;
+  assert.ok(dom(f.render('First\nSecond')).querySelector('p br'));
+});
+
+test('highlighted spans remain balanced across numbered code lines', () => {
+  assert.deepEqual(codeLines('a<span class="s">"x\n<span class="inner">y</span>"</span>b'), ['a<span class="s">"x</span>', '<span class="s"><span class="inner">y</span>"</span>b']);
+});
+
+test('unified notebook Markdown renders MyST and stops recursive notebook embeds', async t => {
+  const notebook = (source: string) => JSON.stringify({ cells: [{ cell_type: 'markdown', source }], metadata: {} });
+  const f = await fixture(t, { 'Main.md': '', 'book.ipynb': notebook('Standalone $x$\n\n:::{embed} book.ipynb\n:::') });
+  extendMystMarkdown(f.md, f.host);
+  const document = dom(f.render(':::{embed} book.ipynb\n:::'));
+  assert.ok(document.querySelector('.katex'));
+  assert.match(document.body.textContent ?? '', /Cyclic or deeply nested notebook embed stopped/);
+});
+
+test('headings containing wikilinks retain their visible text as the anchor', async t => {
+  const source = '# [[Note|Visible name]]\n\n[[#Visible name]]';
+  const f = await fixture(t, { 'Main.md': source, 'Note.md': 'Note' });
+  extendMystMarkdown(f.md, f.host);
+  const document = dom(f.render(source));
+  assert.ok(document.getElementById('visible-name'));
+  assert.ok(document.querySelector('a[href="#visible-name"]'));
+});
+
+test('footnote bodies use the same MyST directive and Obsidian syntax pipeline', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  const document = dom(f.render('A[^n]\n\n[^n]: :::{note}\n    ==**Nested** {kbd}`Ctrl`==\n    :::'));
+  assert.equal(document.querySelector('.footnote-item .myst-admonition mark strong')?.textContent, 'Nested');
+  assert.equal(document.querySelector('.footnote-item kbd')?.textContent, 'Ctrl');
+  assert.equal(document.querySelectorAll('.footnote-item').length, 1);
+});
 
 test('Obsidian block anchors and wikilinks survive MyST roles and project configuration', async t => {
   for (const [prefix, configuration] of [['', false], ['{kbd}`Ctrl`\n\n', false], ['', true]] as const) {

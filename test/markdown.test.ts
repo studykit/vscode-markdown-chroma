@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import * as path from 'node:path';
 import { JSDOM } from 'jsdom';
 import MarkdownIt from 'markdown-it';
-import { fixture } from './helpers';
+import { fixture as baseFixture } from './helpers';
+import { extendMystMarkdown } from '../src/myst';
 import { extendObsidianMarkdown } from '../src/markdown';
 import { findSection, parseWiki } from '../src/references';
 
 const dom = (html: string) => new JSDOM(html).window.document;
+
+for (const unified of [false, true]) describe(unified ? 'Unified MyST preview' : 'Native Obsidian rules', () => {
+const fixture = async (...args: Parameters<typeof baseFixture>) => {
+  const f = await baseFixture(...args);
+  if (unified) extendMystMarkdown(f.md, f.host);
+  return f;
+};
 
 test('wiki links resolve late, include aliases and escape display text', async t => {
   const f = await fixture(t, { 'Main.md': '', 'folder/한글 노트.md': '---\naliases: [별칭]\n---\n# Hello *world*\n' });
@@ -89,7 +97,7 @@ test('comments spanning blank lines are removed without swallowing following con
   const f = await fixture(t, { 'Main.md': '' });
   const doc = dom(f.render('before %%inline%% after\n\n%%\nhidden\n\n# Hidden heading\n%%\n\nVisible'));
   assert.equal(doc.querySelector('h1'), null);
-  assert.equal(doc.body.textContent?.trim(), 'before  after\nVisible');
+  assert.deepEqual([...doc.querySelectorAll('p')].map(p => p.textContent), ['before  after', 'Visible']);
 });
 
 test('nested callouts have Markdown titles and correct folding defaults', async t => {
@@ -367,7 +375,7 @@ test('embedded source maps do not scroll the parent editor to another note line'
     }
   });
   const doc = dom(f.render('paragraph\n\n![[Note]]'));
-  assert.ok(doc.querySelector('.obsidian-embed-block[data-line="2"]'));
+  assert.ok(doc.querySelector(unified ? '.code-line[data-line="2"] .obsidian-embed-block' : '.obsidian-embed-block[data-line="2"]'));
   assert.equal(doc.querySelectorAll('.obsidian-embed-content [data-line]').length, 0);
   assert.equal(doc.querySelectorAll('.obsidian-embed-content .code-line').length, 0);
 });
@@ -392,4 +400,6 @@ test('partial embed backlinks restart reference order and isolate destinations',
   assert.deepEqual(links.map(link => link.textContent), ['↩', '↩']);
   assert.notEqual(links[0].getAttribute('href'), links[1].getAttribute('href'));
   for (const link of links) assert.ok(doc.getElementById(link.getAttribute('href')!.slice(1)));
+});
+
 });

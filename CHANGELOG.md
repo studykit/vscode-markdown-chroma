@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Use one MyST parser with Obsidian syntax for all previews, including project-plugin bodies. Highlights, callouts, tags, and inline footnotes compose with MyST directives and roles.
+- Apply MyST math, definition lists, and comments without requiring a project or another MyST construct, and preserve straight quotes.
+- Keep footnote return links inside the final paragraph, including multiple references.
+- Render code line numbers and emphasis with native syntax highlighting, table/code captions above their content, heading contents lists, dropdowns, and chemical formula subscripts.
+
 ## 0.1.2
 
 - Preserve Obsidian block anchors, wikilinks, and block embeds in documents that also use MyST syntax or project configuration.

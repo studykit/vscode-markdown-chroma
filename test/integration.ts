@@ -9,6 +9,7 @@ import { crossReferenceSource, assertCrossReferences } from './cross-references'
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 import { verifyPreviewPlugins } from './preview-plugins-integration';
 import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
+import { unifiedPreviewSource, assertUnifiedPreview } from './unified-preview';
 import { obsidianBlockSource, assertObsidianBlocks } from './obsidian-blocks';
 
 export async function run(): Promise<void> {
@@ -118,6 +119,12 @@ export async function run(): Promise<void> {
   assert.match(html, /class="obsidian-footnote-backref" href="#fnref1"[^>]*>↩[₀-₉]*<\/a>/);
   assert.match(html, /obsidian-block-checklist/);
   console.log('PASS: built-in markdown.api.render loads the plugin and renders all showcase syntax');
+
+  const unifiedHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', { uri: showcase.uri, version: -1, getText: () => unifiedPreviewSource }))!;
+  const unifiedDocument = new JSDOM(unifiedHtml).window.document;
+  assertUnifiedPreview(unifiedDocument);
+  assert.ok(unifiedDocument.querySelector('.myst-code-line.is-emphasized [class^="hljs-"]'));
+  console.log('PASS: unified MyST/Obsidian syntax, inline footnotes, final-paragraph backlinks, numbered highlighted code and captions render in native Preview');
 
   const codeSamples = [
     ['javascript', 'const answer = "hello";'],
