@@ -1,28 +1,25 @@
 import { createHash } from 'node:crypto';
 import GithubSlugger from 'github-slugger';
-import { createTokenizer, defaultOptions, mystParse, tokensToMyst } from 'myst-parser';
+import { defaultOptions } from 'myst-parser';
+import { parseMarkdown, tokenizeMarkdown } from '../markdown-parser';
 import { normalizeLabel } from 'myst-common';
 import { glossaryTransform } from 'myst-transforms';
 import { VFile } from 'vfile';
-import { gridDirectives } from 'myst-ext-grid';
-import { cardDirective } from 'myst-ext-card';
-import { tabDirectives } from 'myst-ext-tabs';
-import { proofDirective } from 'myst-ext-proof';
-import { exerciseDirectives } from 'myst-ext-exercise';
-import { buttonRole } from 'myst-ext-button';
+import { previewMystOptions } from '../myst-options';
+import { plainText } from '../references';
 import { parseFrontmatter } from '../frontmatter';
 import { glossaryIdentifier, normalizeGlossaries } from '../glossary';
 import type { PluginNames } from './plugins';
 import { globalId, normalizeTag, type ContentItem, type DocumentIndex, type Reference, type Section, type Table, type Target } from './types';
 
 interface Node { type: string; children?: Node[]; position?: { start: { line: number; column: number }; end: { line: number; column: number } }; [key: string]: any }
-const directives = [...gridDirectives, cardDirective, ...tabDirectives, proofDirective, ...exerciseDirectives];
+const directives = previewMystOptions.directives;
 const directiveBodies = new Map([...defaultOptions.directives, ...directives].flatMap(spec => [spec.name, ...(spec.alias ?? [])].map(name => [name, spec.body?.type] as const)));
 const layout = new Set(['grid', 'grid-item', 'grid-item-card', 'tab-set', 'tab-item', 'div']);
 const ignored = new Set(['code', 'inlineCode', 'math', 'inlineMath', 'html', 'comment']);
 const text = (node: Node): string => {
   if (node.type === 'image') return node.alt ?? '';
-  if (node.type === 'obsidianReference') return node.display || node.target || node.fragment || '';
+  if (node.type === 'obsidianReference') return node.renderedText || node.display || node.target || node.fragment || '';
   if (node.type === 'obsidianTag') return `#${node.name}`;
   if (node.type === 'mystRole') return /^(.+?)\s*<[^<>]+>\s*$/.exec(node.value)?.[1] ?? node.value;
   return node.value ?? node.children?.map(text).join('') ?? '';
@@ -61,66 +58,6 @@ function linkLiteral(value: string): string {
   return value.slice(0, end);
 }
 
-/** Adds leaf tokens before Markdown can split the contents of a wiki link into emphasis/roles. */
-function indexTokenizer(options: Parameters<typeof createTokenizer>[0], source: string) {
-  const md = createTokenizer(options);
-  const sourceLines = source.split('\n');
-  md.inline.ruler.before('text', 'chroma_cursor', (state: any, silent: boolean) => {
-    if (silent) return false;
-    state.chromaCursor = state.pos;
-    if (!state.chromaPush) {
-      state.chromaPush = state.push;
-      state.push = function (type: string, tag: string, nesting: number) {
-        const token = this.chromaPush(type, tag, nesting);
-        if (['image', 'link_open', 'chroma_wiki', 'chroma_tag'].includes(type)) {
-          token.meta = { ...token.meta, chromaOffset: this.chromaCursor, chromaSource: this.src };
-        }
-        return token;
-      };
-    }
-    return false;
-  });
-  md.inline.ruler.before('link', 'chroma_wiki', (state: any, silent: boolean) => {
-    const match = /^(!)?\[\[([^\]\n]+)\]\]/.exec(state.src.slice(state.pos));
-    if (!match) return false;
-    if (!silent) {
-      const token = state.push('chroma_wiki', '', 0);
-      const [destination, ...display] = match[2].split('|');
-      const fragmentAt = destination.indexOf('#');
-      token.meta = { ...token.meta, raw: match[0], target: (fragmentAt < 0 ? destination : destination.slice(0, fragmentAt)).trim(),
-        fragment: fragmentAt < 0 ? null : destination.slice(fragmentAt + 1).trim(), embed: !!match[1], display: display.join('|') };
-    }
-    state.pos += match[0].length;
-    return true;
-  });
-  md.inline.ruler.before('text', 'chroma_tag', (state: any, silent: boolean) => {
-    if (state.src[state.pos] !== '#' || (state.pos && !/[\s([>]/u.test(state.src[state.pos - 1]))) return false;
-    const match = /^#([\p{L}\p{N}\p{M}_-]+(?:\/[\p{L}\p{N}\p{M}_-]+)*)/u.exec(state.src.slice(state.pos));
-    if (!match || !/[\p{L}\p{M}_-]/u.test(match[1])) return false;
-    if (!silent) { const token = state.push('chroma_tag', '', 0); token.meta = { ...token.meta, name: match[1] }; }
-    state.pos += match[0].length;
-    return true;
-  });
-  // The upstream inline tokens often inherit the first line of a paragraph. Preserve each occurrence's line.
-  md.core.ruler.after('inline', 'chroma_positions', (state: any) => {
-    for (const token of state.tokens) {
-      if (token.type !== 'inline' || !token.map) continue;
-      for (const child of token.children ?? []) {
-        if (child.meta?.chromaOffset === undefined) continue;
-        const before = child.meta.chromaSource.slice(0, child.meta.chromaOffset);
-        const relativeLine = before.split('\n').length - 1;
-        const line = token.map[0] + relativeLine;
-        const inlineColumn = before.length - (before.lastIndexOf('\n') + 1);
-        const inlineLine = child.meta.chromaSource.split('\n')[relativeLine];
-        const originalLine = sourceLines[line] ?? '';
-        const indent = Math.max(0, originalLine.indexOf(inlineLine));
-        child.map = [line, line + 1]; child.col = [indent + inlineColumn, indent + inlineColumn];
-      }
-    }
-  });
-  return md;
-}
-
 export function parseIndex(file: string, source: string, settings: Record<string, any> = {}, plugins?: PluginNames): DocumentIndex {
   const frontmatter = parseFrontmatter(source);
   const lines = source.split('\n');
@@ -132,25 +69,23 @@ export function parseIndex(file: string, source: string, settings: Record<string
     tags: [], sections: [], tables: [], images: [], glossaries: [], terms: [], targets: [], outgoing: [], diagnostics: [], bibliographyKeys: [] };
   if (frontmatter?.error) document.diagnostics.push({ code: 'invalidFrontmatter', message: frontmatter.error, file, line: 1, severity: 'error' });
   const vfile = new VFile({ path: file });
-  const options = { directives, roles: [buttonRole], extensions: { frontmatter: false, strikethrough: true,
+  const options = { markdownit: { linkify: false }, directives, roles: previewMystOptions.roles, extensions: { frontmatter: false, strikethrough: true,
     math: settings.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile };
-  const tree = mystParse(body, options) as Node;
-  normalizeGlossaries(tree, body, source => mystParse(source, options) as Node, vfile);
+  const tree = parseMarkdown(body, options).tree as Node;
+  normalizeGlossaries(tree, body, source => parseMarkdown(source, options).tree as Node, vfile);
   glossaryTransform(tree, vfile);
   const processedDirectives = new Map(all(tree, 'mystDirective').map(node => [`${node.position?.start.line}:${node.name}`, node]));
   const processedTerms = new Map(all(tree, 'definitionTerm').filter(node => node.identifier).map(node => [node.position?.start.line, node]));
-  const md = indexTokenizer(options, body);
+  const referenceHandler = { type: 'obsidianReference', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => ({ ...token.meta, fragment: token.meta.fragment || null, display: token.meta.label, renderedText: plainText(token), embed: token.type !== 'obsidian_wiki' }) };
   const handlers = {
-    chroma_wiki: { type: 'obsidianReference', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => token.meta },
-    chroma_tag: { type: 'obsidianTag', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => token.meta },
+    obsidian_wiki: referenceHandler, obsidian_embed: referenceHandler, obsidian_embed_block: referenceHandler,
+    obsidian_tag: { type: 'obsidianTag', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => ({ name: token.content.slice(1) }) },
     link: { type: 'link', getAttrs: (token: any) => ({ url: token.attrGet('href'), chromaOffset: token.meta?.chromaOffset, chromaSource: token.meta?.chromaSource }) },
     image: { type: 'image', noCloseToken: true, isLeaf: true, getAttrs: (token: any) => ({ url: token.attrGet('src'), alt: token.content }) },
   };
-  const raw = tokensToMyst(body, md.parse(body, { vfile }), { handlers }) as Node;
-  normalizeGlossaries(raw, body, source => {
-    const tokenizer = indexTokenizer(options, source);
-    return tokensToMyst(source, tokenizer.parse(source, { vfile }), { handlers }) as Node;
-  }, vfile);
+  const rawOptions = { ...options, mdast: { handlers } };
+  const raw = tokenizeMarkdown(body, rawOptions).tree as Node;
+  normalizeGlossaries(raw, body, source => tokenizeMarkdown(source, rawOptions).tree as Node, vfile);
   const pluginDirectives = new Set(plugins?.directives), pluginRoles = new Set(plugins?.roles);
   for (const message of vfile.messages) {
     const extension = /^unknown (directive|role): (.+)$/.exec(message.message);
@@ -236,6 +171,10 @@ export function parseIndex(file: string, source: string, settings: Record<string
   const rawWalk = (node: Node, inherited?: ReturnType<typeof range>, figure: ReturnType<typeof figureInfo> | null = null) => {
     const bounds = range(node, inherited);
     node.position ??= { start: { line: bounds.startLine, column: 1 }, end: { line: bounds.endLine, column: 1 } };
+    if (node._obsidianBlock) {
+      const { id, startLine, endLine } = node._obsidianBlock;
+      document.targets.push({ label: `^${id}`, identifier: `^${id}`, kind: 'obsidian-block', id: `obsidian-block-${id}`, startLine, endLine, nodeStartLine: startLine });
+    }
     if (node.type === 'math') for (const label of labelValues(node)) addTarget(label, 'math', null, bounds);
     if (ignored.has(node.type)) return;
     if (node.type === 'mystTarget') {

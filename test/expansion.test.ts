@@ -11,6 +11,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { startHttp } from '../src/mcp/http';
 import { assertRetrievalResult } from './retrieval-contract';
+import { obsidianBlockSource } from './obsidian-blocks';
 
 async function fixture(files: Record<string, string>) {
   const directory = await fs.mkdtemp(path.join(tmpdir(), 'chroma-expand-')), root = path.join(directory, 'docs'), cache = path.join(directory, 'cache');
@@ -42,6 +43,67 @@ export default {directives:[
  {name:'demo:unicode',run(){return [{type:'paragraph',children:[{type:'text',value:'😀'.repeat(50)}]}];}}
 ],roles:[{name:'demo:badge',alias:['demo:tag'],body:{type:String},run(data){record('role');return [{type:'strong',children:[{type:'text',value:data.body}]}];}}]};`;
 const pluginFiles = { 'myst.yml': 'project:\n  plugins: [./plugin.mjs]\n', 'plugin.mjs': plugin, 'helper.mjs': "export const greeting='Hello';", 'data.json': '{"value":"FIRST"}' };
+
+test('expansion uses visible heading titles, preserves comment-adjacent prose and serializes display nodes', async t => {
+  const f = await fixture({ 'guide.md': ':::{note}\n%%hidden%% Visible text\nSecond line.\n:::\n\n:::{dropdown} More\n{chem}`H2O` and ==marked==.\n:::\n\n![[target#"Quoted" Marked]]\n',
+    'target.md': '# "Quoted" ==Marked==\nTARGET_BODY\n' }); t.after(f.cleanup);
+  const note = await f.expand('guide.md', 'note');
+  assert.equal(note.complete, true, JSON.stringify(note.diagnostics));
+  assert.match(note.content, /Visible text\nSecond line\./);
+  assert.doesNotMatch(note.content, /hidden/);
+  const dropdown = await f.expand('guide.md', 'dropdown');
+  assert.equal(dropdown.complete, true, JSON.stringify(dropdown.diagnostics));
+  assert.match(dropdown.content, /More\n\n\{chem\}`H2O` and ==marked==\./);
+  const embed = await f.expand('guide.md', 'obsidian-embed');
+  assert.equal(embed.complete, true, JSON.stringify(embed.diagnostics));
+  assert.match(embed.content, /TARGET_BODY/);
+  const cli = await f.cli('expand-directive', 'guide.md', '--line', '6', '--json');
+  assert.equal(cli.code, 0, cli.stderr);
+  assert.deepEqual(JSON.parse(cli.stdout), presentResult(dropdown, { command: 'expand-directive', arguments: { file: 'guide.md', line: 6 } }));
+});
+
+test('block embeds read exact saved block ranges and reject ambiguous or hidden targets', async t => {
+  for (const ending of ['\n', '\r\n']) {
+    const target = obsidianBlockSource.replace(/\n/g, ending);
+    const ids = ['paragraph', 'item', 'list', 'quote', 'table', 'callout'];
+    const f = await fixture({ 'blocks.md': target, 'guide.md': ids.map(id => `![[blocks#^${id}]]`).join('\n\n'),
+      'duplicate.md': 'One ^dup\n\nTwo ^dup\n', 'ambiguous.md': '![[duplicate#^dup]]\n' }); t.after(f.cleanup);
+    const expected = ['Paragraph **content**. ^paragraph', '- src/lib/ ^item', '- src/docs/ ^docs', '> Quote content.', '| Name | Value |', '> [!tip]- Callout'];
+    for (let i = 0; i < ids.length; i++) {
+      const result = await f.service.execute({ command: 'expand-directive', arguments: { file: 'guide.md', line: 1 + i * 2 } });
+      assert.ok('expansion' in result);
+      assert.equal(result.complete, true, JSON.stringify(result.diagnostics));
+      assert.ok(result.content.startsWith(expected[i]), `${ids[i]}: ${result.content}`);
+      assert.ok(target.includes(result.content), ids[i]);
+      if (['list', 'quote', 'table', 'callout'].includes(ids[i])) assert.ok(!result.content.includes(`^${ids[i]}`));
+    }
+    const ambiguous = await f.expand('ambiguous.md', 'obsidian-embed');
+    assert.equal(ambiguous.complete, false);
+    assert.equal(ambiguous.diagnostics[0].code, 'ambiguousTarget');
+  }
+});
+
+test('expanded bodies retain callouts, tasks, colored marks, wiki syntax, roles and footnotes', async t => {
+  const source = '::::{note}\n> [!tip]- Details\n> ==🔴marked== [[Target|label]] #tag\n\n- [x] Done\n\n{sc}`Name` {sub}`2` {sup}`3` {kbd}`Ctrl` and footnote[^one].\n\n[^one]: Body **bold**.\n::::\n';
+  const f = await fixture({ 'guide.md': source, 'Target.md': '# Target\n' }); t.after(f.cleanup);
+  const result = await f.expand('guide.md', 'note');
+  assert.equal(result.complete, true, JSON.stringify(result.diagnostics));
+  for (const value of ['> [!tip]- Details', '> ==🔴marked== [[Target|label]] #tag', '- [x] Done', '{sc}`Name`', '{sub}`2`', '{sup}`3`', '{kbd}`Ctrl`', '[^one]', '[^one]: Body **bold**.']) assert.ok(result.content.includes(value), result.content);
+});
+
+test('commented occurrences cannot select or execute plugins and preserve CRLF selection offsets', async t => {
+  const source = ['%%', ':::{demo:inner}', ':::', '![[target]]', '%%', '', '%%hidden%% Visible ![[target]]', '> ![[target]]', '- ![[target]]', '', '::::{note}', '%%', ':::{demo:inner}', ':::', '%%', 'Visible body.', '::::', ''].join('\r\n');
+  const f = await fixture({ ...pluginFiles, 'guide.md': source, 'target.md': 'TARGET\r\n' }); t.after(f.cleanup);
+  assert.deepEqual(occurrences(source).map(item => item.startLine), [7, 8, 9, 11]);
+  for (const item of occurrences(source).filter(item => item.name === 'obsidian-embed')) assert.equal(source.slice(item.startOffset, item.endOffset), '![[target]]');
+  await assert.rejects(f.service.execute({ command: 'expand-directive', arguments: { file: 'guide.md', line: 2 } }), { code: 'directiveNotFound' });
+  const note = await f.expand('guide.md', 'note');
+  assert.equal(note.complete, true, JSON.stringify(note.diagnostics));
+  assert.match(note.content, /Visible body/);
+  assert.doesNotMatch(note.content, /INNER_RESULT/);
+  const counts = await fs.readFile(path.join(f.directory, 'counts.txt'), 'utf8');
+  assert.equal(counts.trim(), 'load');
+});
 
 test('includes, literal filters, local/label/Obsidian embeds use saved source and preserve the source index', async t => {
   const f = await fixture({ ...pluginFiles, 'source.md': '# Source\n\n:::{include} target.md\n:::\n\n:::{literalinclude} code.py\n:start-after: START\n:end-before: END\n:::\n\n:::{embed} #detail-label\n:::\n\n![[target#Detail]]\n',
@@ -144,7 +206,8 @@ test('callback/loading/timeout/unsupported failures preserve useful content and 
 });
 
 test('stdio and HTTP expansion agree with the API and expose execution annotations and launch-only opt-in', {timeout:20000}, async t => {
-  const f=await fixture({...pluginFiles,'guide.md':':::{demo:greeting} reader\n:::\n\n:::{include} target.md\n:::\n','target.md':'LOCAL_CONTENT\n'}); t.after(f.cleanup);
+  const f=await fixture({...pluginFiles,'guide.md':':::{demo:greeting} reader\n:::\n\n:::{include} target.md\n:::\n','target.md':'LOCAL_CONTENT\n',
+    'display.md': '# "Quoted" ==Marked==\n\n:::{dropdown} More\n%%hidden%% {chem}`H2O`\n:::\n\n![[block#^part]]\n', 'block.md': 'BLOCK_CONTENT ^part\n'}); t.after(f.cleanup);
   const handle=await startHttp(f.service,{host:'127.0.0.1',port:0,allowedHosts:['127.0.0.1'],allowedOrigins:['127.0.0.1']},()=>{});
   const clients=[new Client({name:'expand-stdio',version:'1'}),new Client({name:'expand-http',version:'1'})];
   try{
@@ -155,6 +218,16 @@ test('stdio and HTTP expansion agree with the API and expose execution annotatio
     for(const client of clients){
       const tool=(await client.listTools()).tools.find(item=>item.name==='expand_directive')!; assert.equal(tool.annotations?.readOnlyHint,false); assert.equal(tool.annotations?.idempotentHint,false);
       const result=await client.callTool({name:'expand_directive',arguments:query.arguments}); assert.deepEqual(result.structuredContent,expected); assertRetrievalResult(result.structuredContent);
+      for (const check of [
+        { command: 'read-section' as const, name: 'read_section', arguments: { file: 'display.md', title: '"Quoted" Marked' } },
+        { command: 'expand-directive' as const, name: 'expand_directive', arguments: { file: 'display.md', line: 3 } },
+        { command: 'expand-directive' as const, name: 'expand_directive', arguments: { file: 'display.md', line: 7 } },
+      ]) {
+        const expected = presentResult(await f.service.execute(check), check);
+        const actual = await client.callTool({ name: check.name, arguments: check.arguments });
+        assert.notEqual(actual.isError, true, JSON.stringify(actual));
+        assert.deepEqual(actual.structuredContent, expected);
+      }
       assert.equal((await client.callTool({name:'expand_directive',arguments:{...query.arguments,allowProjectPlugins:true}})).isError,true);
       const partial=await client.callTool({name:'expand_directive',arguments:{...query.arguments,maxChars:3}}); assert.equal(partial.isError,true); assert.equal((partial.structuredContent as any).complete,false);
     }

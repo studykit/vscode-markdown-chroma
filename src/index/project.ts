@@ -307,7 +307,7 @@ export class MarkdownIndex {
   }
 
   private labelResolution(identifier: string, source?: string): Resolution {
-    let matches = this.data.documents.flatMap(document => document.targets.filter(target => target.identifier === identifier).map(target => ({ file: document.file, target })));
+    let matches = this.data.documents.flatMap(document => document.targets.filter(target => target.kind !== 'obsidian-block' && target.identifier === identifier).map(target => ({ file: document.file, target })));
     const explicit = matches.filter(match => !match.target.implicit);
     const local = matches.filter(match => match.file === source);
     matches = explicit.length ? explicit : local.length ? local : matches;
@@ -328,7 +328,7 @@ export class MarkdownIndex {
           let fragment = reference.fragment;
           try { fragment = decodeURIComponent(fragment); } catch { /* Preserve literal malformed escapes. */ }
           const identifier = normalizeLabel(fragment)?.identifier;
-          const explicit = identifier && this.data.documents.some(d => d.targets.some(t => !t.implicit && t.identifier === identifier));
+          const explicit = !fragment.startsWith('^') && identifier && this.data.documents.some(d => d.targets.some(t => !t.implicit && t.kind !== 'obsidian-block' && t.identifier === identifier));
           // Text-bearing MyST links can select project labels. Ordinary heading fragments stay local.
           result = explicit ? this.labelResolution(identifier, document.file) : this.resolveFile('', document.file);
         }
@@ -341,7 +341,12 @@ export class MarkdownIndex {
         if (result.status === 'found' && reference.fragment !== null && result.file) {
           const target = this.data.documents.find(d => d.file === result.file);
           const fragment = (() => { try { return decodeURIComponent(reference.fragment!); } catch { return reference.fragment!; } })();
-          if (fragment.startsWith('^') || !target) result.fragmentStatus = 'notIndexed';
+          if (!target) result.fragmentStatus = 'notIndexed';
+          else if (fragment.startsWith('^')) {
+            const blocks = target.targets.filter(item => item.kind === 'obsidian-block' && item.label === fragment);
+            result.fragmentStatus = blocks.length === 1 ? 'found' : blocks.length ? 'ambiguous' : 'missing';
+            if (blocks.length === 1) { result.targetKind = 'obsidian-block'; result.targetId = blocks[0].id ?? undefined; }
+          }
           else {
             const headingParts = fragment.split('#');
             const exact = target?.sections.filter(section => section.id === fragment) ?? [];

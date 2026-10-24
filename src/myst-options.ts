@@ -5,7 +5,7 @@ import { proofDirective } from 'myst-ext-proof';
 import { exerciseDirectives } from 'myst-ext-exercise';
 import { buttonRole } from 'myst-ext-button';
 
-// Shared by the synchronous preview and the project-plugin worker.
+// Built-in extensions shared by preview, indexing, and explicit expansion.
 export const previewMystOptions = {
   directives: [...gridDirectives, cardDirective, ...tabDirectives, proofDirective, ...exerciseDirectives],
   roles: [buttonRole], extensions: { frontmatter: false, strikethrough: true }

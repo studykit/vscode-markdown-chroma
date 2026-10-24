@@ -1,4 +1,5 @@
-import { defaultOptions, mystParse } from 'myst-parser';
+import { defaultOptions } from 'myst-parser';
+import { parseMarkdown } from '../markdown-parser';
 import { previewMystOptions } from '../myst-options';
 import { occurrences } from '../index/expansion-source';
 
@@ -37,11 +38,11 @@ export function parseExpansion(source: string, vfile: any, directives: any[], ro
       mark(output); return output;
     },
   });
-  const tree = mystParse(source, { ...previewMystOptions, vfile,
+  const tree = parseMarkdown(source, { ...previewMystOptions, vfile,
     directives: [...previewMystOptions.directives, ...directives.map(spec => wrap(spec, 'directive')), ...unknown],
     roles: [...previewMystOptions.roles, ...roles.map(spec => wrap(spec, 'role'))],
     extensions: { ...previewMystOptions.extensions, math: settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true },
-  });
+  }).tree;
   const mark = (node: any) => {
     if (node.type === 'include' || node.type === 'embed') node._expansionDepth ??= depth + 1;
     if (node.type === 'mystDirective' && ['include', 'literalinclude'].includes(node.name)) for (const child of node.children ?? []) if (child.type === 'include') child._expansionOptions = node.options ?? {};

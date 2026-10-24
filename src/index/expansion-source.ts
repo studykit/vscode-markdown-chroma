@@ -1,5 +1,4 @@
-import { createTokenizer, tokensToMyst } from 'myst-parser';
-import { previewMystOptions } from '../myst-options';
+import { tokenizeMarkdown } from '../markdown-parser';
 import { IndexError } from './types';
 import { parseFrontmatter } from '../frontmatter';
 
@@ -8,26 +7,12 @@ export interface Occurrence { name: string; startLine: number; endLine: number; 
 
 /** Tokenization only: no callbacks, file access, or guessed fence boundaries. */
 export function occurrences(source: string): Occurrence[] {
-  const md = createTokenizer(previewMystOptions);
-  md.inline.ruler.before('link', 'chroma_expand_embed', (state: any, silent: boolean) => {
-    const match = /^!\[\[([^\]\n]+)\]\]/.exec(state.src.slice(state.pos));
-    if (!match) return false;
-    if (!silent) { const token = state.push('chroma_expand_embed', '', 0); token.meta = { value: match[0], target: match[1].split('|')[0], offset: state.pos, source: state.src }; }
-    state.pos += match[0].length; return true;
-  });
   const originalLines = source.split('\n'), frontmatterEnd = parseFrontmatter(source)?.endLine ?? 0;
   const body = originalLines.map((line, i) => i < frontmatterEnd ? '' : line).join('\n');
-  md.core.ruler.after('inline', 'chroma_embed_positions', (state: any) => {
-    for (const token of state.tokens) if (token.type === 'inline' && token.map) for (const child of token.children ?? []) if (child.type === 'chroma_expand_embed') {
-      const before = child.meta.source.slice(0, child.meta.offset), relativeLine = before.split('\n').length - 1;
-      const line = token.map[0] + relativeLine, column = before.length - before.lastIndexOf('\n') - 1;
-      const indent = Math.max(0, originalLines[line]?.indexOf(child.meta.source.split('\n')[relativeLine]) ?? 0);
-      child.map = [line, line + 1]; child.col = [indent + column, indent + column + child.meta.value.length];
-    }
-  });
-  const tree = tokensToMyst(body, md.parse(body, {}), { handlers: {
-    chroma_expand_embed: { type: 'chromaEmbed', isLeaf: true, noCloseToken: true, getAttrs: (token: any) => token.meta },
-  } }) as ExpansionNode;
+  const embedHandler = { type: 'chromaEmbed', isLeaf: true, noCloseToken: true, getAttrs: (token: any) => ({
+    value: token.meta.raw, target: token.meta.target + (!token.meta.fragment ? '' : '#' + token.meta.fragment), block: token.type === 'obsidian_embed_block'
+  }) };
+  const tree = tokenizeMarkdown(body, { mdast: { handlers: { obsidian_embed: embedHandler, obsidian_embed_block: embedHandler } } }).tree as ExpansionNode;
   const result: Occurrence[] = [], lines = originalLines, offsets: number[] = [];
   let offset = 0; for (const line of lines) { offsets.push(offset); offset += line.length + 1; }
   const walk = (node: ExpansionNode) => {
@@ -35,7 +20,7 @@ export function occurrences(source: string): Occurrence[] {
     if (node.type === 'mystDirective' || node.type === 'chromaEmbed') {
       const startLine = node.position?.start.line, endLine = node.position?.end.line;
       if (startLine && endLine) {
-        const startOffset = offsets[startLine - 1] + (node.type === 'chromaEmbed' ? node.position.start.column - 1 : 0);
+        const startOffset = offsets[startLine - 1] + (node.type === 'chromaEmbed' ? node.block ? Math.max(0, lines[startLine - 1].indexOf(node.value)) : node.position.start.column - 1 : 0);
         const endOffset = node.type === 'chromaEmbed' ? startOffset + node.value.length : offsets[endLine - 1] + lines[endLine - 1].length;
         result.push({ name: node.name ?? 'obsidian-embed', startLine, endLine, startOffset, endOffset, source: source.slice(startOffset, endOffset), node });
       }
@@ -66,10 +51,30 @@ export function markdownFromAst(node: ExpansionNode, issue: (message: string) =>
     case 'admonition': case 'figure': case 'caption': case 'tabSet': case 'tabItem': case 'grid': case 'gridItem': return children();
     case 'text': return node.value ?? '';
     case 'mystRole': if (node.children) return children(); issue(`Role ${node.name} could not be expanded; original syntax retained.`); return `{${node.name}}\`${node.value ?? ''}\``;
-    case 'paragraph': case 'admonitionTitle': return block(children());
+    case 'details': return block(children());
+    case 'summary': case 'paragraph': case 'admonitionTitle': return block(children());
     case 'heading': return block('#'.repeat(node.depth) + ' ' + children());
     case 'strong': return `**${children().trimEnd()}**`;
     case 'emphasis': return `*${children().trimEnd()}*`;
+    case 'chemicalFormula': return `{chem}\`${node.value ?? children()}\``;
+    case 'smallcaps': case 'subscript': case 'superscript': case 'keyboard': {
+      const role = { smallcaps: 'sc', subscript: 'sub', superscript: 'sup', keyboard: 'kbd' }[node.type];
+      return `{${role}}\`${children()}\``;
+    }
+    case 'mark': return `==${({ red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢', blue: '🔵', purple: '🟣' } as Record<string, string>)[node.color] ?? ''}${children()}==`;
+    case 'obsidianInline': case 'obsidianBlock': {
+      const token = node._token;
+      if (token?.type === 'obsidian_checkbox') return `[${token.meta.marker}] `;
+      const value = token?.meta?.raw ?? token?.content ?? node.value ?? '';
+      return node.type === 'obsidianBlock' ? block(value) : value;
+    }
+    case 'obsidianCallout': {
+      const meta = node._token?.meta ?? {};
+      return block(`[!${meta.identifier ?? 'note'}]${meta.fold ?? ''} ${children().trimEnd()}`.split('\n').map(line => '> ' + line).join('\n'));
+    }
+    case 'obsidianCalloutTitle': return block(children());
+    case 'footnoteReference': return `[^${node.identifier}]`;
+    case 'footnoteDefinition': return block(`[^${node.identifier}]: ${children().trimEnd().replace(/\n/g, '\n    ')}`);
     case 'delete': return `~~${children().trimEnd()}~~`;
     case 'inlineCode': { const fence = '`'.repeat([...(node.value ?? '').matchAll(/`+/g)].reduce((width: number, m: any) => Math.max(width, m[0].length + 1), 1)); return `${fence} ${node.value ?? ''} ${fence}`; }
     case 'code': return block(codeFence(node.value ?? '', node.lang ?? ''));

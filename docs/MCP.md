@@ -214,11 +214,11 @@ Term names in `read_terms` and `read_items` also accept glossary aliases. All na
 
 Queries use saved files. They do not read unsaved editor contents. Requests and background refreshes are serialized on the same service; structural queries in separate CLI/server processes share cache locks. Line reads do not acquire those locks. Cancellation can stop a lock wait but does not interrupt synchronous parsing already in progress. Structural refresh cost grows with the root size. Structural lists do not provide pagination.
 
-Read tools return original Markdown. Tables and images provide lists and locations, rather than separate raw-content reads or image binaries. See the [index specification](CLI-INDEX-SPEC.md) for other limits and diagnostics.
+Section titles use the same visible text as preview, including straight quotes and highlighted words. Obsidian comments are excluded from structural discovery and expansion selection, and block IDs resolve within their target file. Read tools return original Markdown, including comments and block markers. Tables and images provide lists and locations, rather than separate raw-content reads or image binaries. See the [index specification](CLI-INDEX-SPEC.md) for other limits and diagnostics.
 
 ## Selective expansion after a source read
 
-Read the authored source first, then call `expand_directive` only when that occurrence's content is needed. Pass its observed opening `line`, not a guessed position. Local include/literalinclude and document/heading/label embeds work without JavaScript permission.
+Read the authored source first, then call `expand_directive` only when that occurrence's content is needed. Pass its observed opening `line`, not a guessed position. Local include/literalinclude and document/heading/label/block embeds work without JavaScript permission.
 
 For custom JavaScript directives, enable the server capability at launch:
 

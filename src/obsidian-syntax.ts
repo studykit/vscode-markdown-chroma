@@ -13,7 +13,7 @@ const calloutTypes: Record<string, string> = {
 };
 const colors: Record<string, string> = { '🔴': 'red', '🟠': 'orange', '🟡': 'yellow', '🟢': 'green', '🔵': 'blue', '🟣': 'purple' };
 
-/** Syntax only: shared by the preview tokenizer and its plugin worker; never reads files. */
+/** Syntax only: shared by preview, indexing, and explicit expansion; never reads files. */
 export function installObsidianSyntax(md: MarkdownIt, myst = false): void {
   const TokenClass = md.parseInline('', {})[0].constructor as typeof Token;
   installFootnotes(md, myst);
@@ -29,7 +29,7 @@ export function installObsidianSyntax(md: MarkdownIt, myst = false): void {
     if (!reference) return false;
     if (!silent) {
       const token = state.push(match[0].startsWith('!') ? 'obsidian_embed' : 'obsidian_wiki', '', 0);
-      token.meta = reference;
+      token.meta = { ...token.meta, ...reference };
       const label = new TokenClass('text', '', 0);
       label.content = reference.label ?? reference.target.replace(/\.md$/i, '') + (reference.fragment ? ` › ${reference.fragment.replace(/^\^/, '')}` : '');
       token.children = [label];
@@ -40,12 +40,12 @@ export function installObsidianSyntax(md: MarkdownIt, myst = false): void {
   md.block.ruler.before('paragraph', 'obsidian_embed_block', (state, startLine, _endLine, silent) => {
     if (state.sCount[startLine] - state.blkIndent >= 4) return false;
     const line = state.src.slice(state.bMarks[startLine] + state.tShift[startLine], state.eMarks[startLine]).trim();
-    if (!line.startsWith('![[')) return false;
+    if (!/^!\[\[[^\]\n]+\]\]$/.test(line)) return false;
     const reference = parseWiki(line);
     if (!reference) return false;
     if (!silent) {
       const token = state.push('obsidian_embed_block', '', 0);
-      token.meta = reference;
+      token.meta = { ...token.meta, ...reference };
       token.map = [startLine, startLine + 1];
       token.block = true;
       state.line = startLine + 1;

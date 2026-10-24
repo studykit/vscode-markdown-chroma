@@ -2,7 +2,7 @@ import GithubSlugger from 'github-slugger';
 import { footnoteBacklinks, assignFootnoteNumbers } from './footnotes';
 import type MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
-import { parsePreview } from './preview-parser';
+import { parseMarkdown } from './markdown-parser';
 import { decorateCode } from './code-lines';
 import { basicTransformations, glossaryTransform, abbreviationTransform, ReferenceState, enumerateTargetsTransform, resolveLinksAndCitationsTransform, resolveReferencesTransform } from 'myst-transforms';
 import { previewMystOptions as options } from './myst-options';
@@ -80,7 +80,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     const config = file ? mystConfiguration(host, { currentDocument: host.documentUri(file) }) : undefined;
     const plugins = file ? host.parseMystPlugins?.(source, file, { ...project, plugins: config?.project.plugins }) : undefined;
     const parseOptions = { ...options, extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile };
-    const parsed = parsePreview(source, parseOptions);
+    const parsed = parseMarkdown(source, parseOptions);
     const tree = plugins?.tree ?? parsed.tree;
     const problems = [...(plugins?.errors ?? []), ...(plugins?.messages ?? []).map(message => `MyST${message.line ? ` line ${message.line}` : ''}: ${message.reason}`)];
     if (plugins?.errors.length || plugins?.diagnostics?.length) problems.push(pluginRecovery);
@@ -91,7 +91,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         for (const child of node.children ?? []) child.position ??= node.position;
       }
     });
-    normalizeGlossaries(tree, source, body => parsePreview(body, parseOptions).tree, vfile);
+    normalizeGlossaries(tree, source, body => parseMarkdown(body, parseOptions).tree, vfile);
     const referenceTokens = applyObsidianBlocks(tree, parsed.tokens);
     basicTransformations(tree, vfile);
     glossaryTransform(tree, vfile);

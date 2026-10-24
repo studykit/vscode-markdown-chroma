@@ -26,7 +26,7 @@ async function fixture(files: Record<string, string>) {
   return { root, cache, directory, index, write, cli, cleanup: () => fs.rm(directory, { recursive: true, force: true }) };
 }
 
-test('mixed preview syntax indexes sections, tables, terms and file-level block backlinks without changing saved source', async t => {
+test('mixed preview syntax indexes sections, tables, terms and block backlinks without changing saved source', async t => {
   for (const ending of ['\n', '\r\n']) {
     const source = (obsidianBlockSource + '\n## Terms\n\n{term}`Cache`\n\n:::{glossary}\nCache\n: Stored content.\n:::\n').replace(/\n/g, ending);
     const f = await fixture({ 'guide.md': source }); t.after(f.cleanup);
@@ -38,7 +38,7 @@ test('mixed preview syntax indexes sections, tables, terms and file-level block 
     assert.deepEqual(document.terms.map(term => term.name), ['Cache']);
     const blocks = document.outgoing.filter(reference => reference.fragment?.startsWith('^'));
     assert.equal(blocks.length, 6);
-    assert.ok(blocks.every(reference => reference.resolution?.status === 'found' && reference.resolution.fragmentStatus === 'notIndexed'));
+    assert.ok(blocks.every(reference => reference.resolution?.status === 'found' && reference.resolution.fragmentStatus === 'found'));
     assert.equal(document.outgoing.find(reference => reference.kind === 'term')?.resolution?.targetKind, 'term');
     const section = document.sections[0];
     const read = await f.cli('read-section', 'guide.md', '--title', section.title);
@@ -65,6 +65,34 @@ test('sections retain labels, hierarchy, Setext, reserved IDs, CRLF and raw rang
   assert.equal(parseIndex('empty.md', '---\na: 1\n---\n').sections.length, 0);
   assert.equal(parseIndex('body.md', 'Body only').sections[0].id, 'preamble');
   assert.equal(parseIndex('mixed-heading.md', '# [[Guide|문서]] #태그\n').sections[0].title, '문서 #태그');
+  assert.equal(parseIndex('wiki-heading.md', '# [[Guide.md#Part]]\n').sections[0].title, 'Guide › Part');
+});
+
+test('shared syntax keeps visible headings, hides Obsidian comments and preserves occurrence positions', async t => {
+  const source = ['# "Quoted" ==Marked==', '', '%%', '# Hidden', '[[hidden]] #hidden', 'Hidden block ^hidden', '%%', '',
+    '%% inline hidden %% Visible [[target]] #visible', '> [[target]] #quoted', '', '- [[target]] #listed', '',
+    ':::{note}', '%% hidden %% [[target]] #nested', ':::', '', '```md', '%% literal %%', '```', ''].join('\r\n');
+  const f = await fixture({ 'guide.md': source, 'target.md': '# Target\n' }); t.after(f.cleanup);
+  await f.index.refresh();
+  const document = f.index.document('guide.md');
+  assert.deepEqual(document.sections.map(item => item.title), ['"Quoted" Marked']);
+  assert.deepEqual(document.tags.map(item => item.name), ['visible', 'quoted', 'listed', 'nested']);
+  assert.equal(document.targets.some(item => item.label === '^hidden'), false);
+  assert.equal(document.outgoing.length, 4);
+  for (const reference of document.outgoing) {
+    assert.equal(reference.target, 'target');
+    assert.equal(source.split('\r\n')[reference.startLine - 1].slice(reference.column - 1, reference.column - 1 + reference.raw.length), reference.raw);
+  }
+  assert.equal((await f.cli('read-section', 'guide.md', '--title', '"Quoted" Marked')).stdout, source);
+});
+
+test('block fragments are exact local targets, with duplicate ambiguity and no global label collision', async t => {
+  const f = await fixture({ 'a.md': 'One ^same\n\nTwo ^duplicate\n\nThree ^duplicate\n\n[[#^same]] [[#^duplicate]] [[#^SAME]] [[b#^same]] [local](#^same)\n',
+    'b.md': 'Other ^same\n', 'c.md': '(same)=\n# Label\n' }); t.after(f.cleanup);
+  await f.index.refresh();
+  const references = f.index.document('a.md').outgoing;
+  assert.deepEqual(references.map(item => item.resolution?.fragmentStatus), ['found', 'ambiguous', 'missing', 'found', 'found']);
+  assert.deepEqual(references.filter(item => item.resolution?.fragmentStatus === 'found').map(item => item.resolution?.file), ['a.md', 'b.md', 'a.md']);
 });
 
 test('mixed tokenizer collects semantic content once and ignores code, math, comments and escapes', () => {
@@ -167,7 +195,7 @@ test('backlinks resolve files, aliases, sections, term targets and ambiguous ref
   }); t.after(f.cleanup); await f.index.refresh();
   const refs = f.index.document('source.md').outgoing;
   assert.equal(refs.find(r => r.target === 'Dup')!.resolution!.status, 'ambiguous');
-  assert.equal(refs.find(r => r.fragment === '^block')!.resolution!.fragmentStatus, 'notIndexed');
+  assert.equal(refs.find(r => r.fragment === '^block')!.resolution!.fragmentStatus, 'missing');
   assert.equal(refs.find(r => r.kind === 'term' && r.target === 'term-myst markdown')!.resolution!.targetId, 'Target.md#term-myst-markdown');
   assert.equal(refs.find(r => r.target === 'part-label' && r.kind === 'citation')!.resolution!.targetKind, 'section');
   assert.equal(f.index.backlinks(f.index.document('Target.md')).length, 7);

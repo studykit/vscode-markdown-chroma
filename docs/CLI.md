@@ -101,7 +101,7 @@ markdown-chroma expand-directive guide.md --line 42 --root ./notes
 
 Use the actual opening line reported by your source read or search; `42` is illustrative. Selection does not use a guessed section position or accept replacement Markdown. Multiple embeds on one line are ambiguous. Directives inside code fences, inline code, comments, or frontmatter are not selected.
 
-Local MyST `include`, `literalinclude`, and `embed`, and Obsidian document/heading embeds read saved targets inside the root. Include line/marker filters are applied; literal includes return fenced code. MyST labels can select headings or indexed content blocks. Missing or duplicate targets are reported rather than chosen silently.
+Local MyST `include`, `literalinclude`, and `embed`, and Obsidian document/heading/block embeds read saved targets inside the root. Include line/marker filters are applied; literal includes return fenced code. MyST labels can select headings or indexed content blocks. Missing or duplicate targets are reported rather than chosen silently. `![[Note#^block-id]]` selects the saved block range, including an inline ID marker but excluding a standalone marker after a structured block. Dropdown titles and bodies remain separate paragraphs; chemistry roles and highlights retain readable Markdown syntax.
 
 Custom JavaScript directives require explicit permission for that CLI invocation:
 
@@ -115,7 +115,7 @@ Only local ESM plugins registered in `myst.yml`/`myst.yaml`, including local `ex
 
 Default output is readable Markdown. `--json` returns `complete`, source file/line, directive name, content, contributing sources, and any issues; it matches MCP. `--debug` additionally retains source hashes/ranges, diagnostics and bounded worker logs. An optional `--source-hash` rejects a source changed since a debug read. Results come from current saved files and fresh plugin workers, so saved helpers and local data changes are reflected without a Preview session.
 
-Expansion does not write generated content into the persistent index. Ordinary indexing, watching, and `read` operations never execute plugins or expand references. Remote content, notebook outputs, Obsidian block IDs, Python/executable plugins, transforms, asynchronous callbacks, and standalone custom-role expansion are outside this version.
+Expansion does not write generated content into the persistent index. Ordinary indexing, watching, and `read` operations never execute plugins or expand references. Remote content, notebook outputs, Python/executable plugins, transforms, asynchronous callbacks, and standalone custom-role expansion are outside this version.
 
 ## Explore tables, images, and terms
 
@@ -227,6 +227,6 @@ Use [explicit expansion](#expand-a-directive-or-document-embed) to read generate
 - MyST configuration and document frontmatter apply to parsing. Source, configuration, local plugin, and bibliography files each have a 2 MiB limit. Plugin edits invalidate affected cached records.
 - Default responses and `--json` contain information for finding and reading content. Internal index records are available through `--debug` and the public Node API.
 - Partial results exit with code `1` and issues go to stderr; JSON results also have `complete: false`. Invalid arguments exit with code `2`. Ambiguous choices provide candidates for the next read.
-- Index support differs from preview support: Obsidian block IDs and `%%…%%` comments have no special index handling. External table data is neither executed nor downloaded.
+- Obsidian `%%…%%` comments are hidden from the structural index and expansion selection; source reads preserve them verbatim. Block IDs resolve within the target file, with duplicate IDs reported as ambiguous. External table data is neither executed nor downloaded.
 
 The [index specification](CLI-INDEX-SPEC.md) describes all commands, selection rules, records, and diagnostics. The [MCP guide](MCP.md) covers the same features for MCP clients and the public Node API.

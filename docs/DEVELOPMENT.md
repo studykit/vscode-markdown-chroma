@@ -13,7 +13,7 @@ npm run check
 
 `npm run check` runs TypeScript checking, builds the project, and executes the Node test suite. `npm run build` creates the bundles and public API declarations. `npm run watch` rebuilds bundles during development.
 
-Source installs apply `patches/myst-parser+1.7.4.patch` through `patch-package`. This approved patch only exports upstream's existing directive and role passes, allowing the preview to use one tokenizer for MyST and Obsidian. Published consumers use prebuilt bundles; their install hook skips source patches.
+Source installs apply `patches/myst-parser+1.7.4.patch` through `patch-package`. This approved patch only exports upstream's existing directive and role passes, allowing preview, indexing, and explicit expansion to share one tokenizer for MyST and Obsidian. Published consumers use prebuilt bundles; their install hook skips source patches.
 
 Build and package a VS Code extension:
 
@@ -71,7 +71,7 @@ Choose verification according to the change:
 | VS Code activation, document context, file watching, and preview refresh | `src/extension.ts` |
 | Shared Obsidian syntax and native preview rendering | `src/obsidian-syntax.ts`, `src/markdown.ts`, `src/footnotes.ts`, `src/frontmatter.ts`, `src/callout-icons.ts` |
 | Preview document lookup, aliases, and file access | `src/vault.ts` |
-| Unified preview parsing, MyST rendering, code lines, references, optional configuration, and shared glossary normalization | `src/preview-parser.ts`, `src/myst.ts`, `src/code-lines.ts`, `src/references.ts`, `src/myst-config.ts`, `src/glossary.ts` |
+| Shared Markdown parsing, MyST rendering, code lines, references, optional configuration, and shared glossary normalization | `src/markdown-parser.ts`, `src/source-positions.ts`, `src/myst.ts`, `src/code-lines.ts`, `src/references.ts`, `src/myst-config.ts`, `src/glossary.ts` |
 | Opt-in MyST preview plugin lifecycle, diagnostics, isolated parsing, and local module loading | `src/myst-options.ts`, `src/preview-plugins/manager.ts`, `src/preview-plugins/events.ts`, `src/preview-plugins/diagnostics.ts`, `src/preview-plugins/worker.ts`, `src/preview-plugins/loader.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
 | Persistent indexing, parsing, static plugin inspection, source reads, records, shared queries, batch reads, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/plugins.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/batch.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |

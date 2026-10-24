@@ -74,7 +74,7 @@ export async function expandDirective(index: MarkdownIndex, args: ExpansionArgum
   const resolve = (resolution: Resolution) => {
     if (resolution.status === 'ambiguous' || resolution.fragmentStatus === 'ambiguous') throw new IndexError('ambiguousTarget', `Multiple expansion targets match${resolution.candidates?.length ? ': ' + resolution.candidates.join(', ') : '; select a unique heading or label'}.`, resolution.candidates?.map(file => ({ file })));
     if (resolution.status !== 'found' || !resolution.file) throw new IndexError('expansionTargetUnavailable', `Expansion target is ${resolution.status}. Only local files inside the root are supported.`);
-    if (resolution.fragmentStatus === 'notIndexed') throw new IndexError('unsupportedExpansion', 'Notebook output and Obsidian block-ID expansion are not supported.');
+    if (resolution.fragmentStatus === 'notIndexed') throw new IndexError('unsupportedExpansion', 'Notebook output expansion is not supported.');
     if (resolution.fragmentStatus === 'missing') throw new IndexError('expansionTargetUnavailable', 'The target heading or label was not found.');
     return resolution.file;
   };
@@ -83,7 +83,7 @@ export async function expandDirective(index: MarkdownIndex, args: ExpansionArgum
     const reference = index.document(owner).outgoing.find(item => item.kind === 'embed' && item.target === target && item.fragment === fragment && (item.syntax === 'obsidian') === wiki);
     let resolution = reference?.resolution ?? index.resolveFile(target, owner, wiki);
     if (label && !reference && (!target || (!target.includes('.') && !target.includes('/')))) {
-      const all = index.data.documents.flatMap(doc => doc.targets.filter(item => item.identifier === normalizeLabel(fragment ?? target)?.identifier).map(item => ({ doc, item })));
+      const all = index.data.documents.flatMap(doc => doc.targets.filter(item => item.kind !== 'obsidian-block' && item.identifier === normalizeLabel(fragment ?? target)?.identifier).map(item => ({ doc, item })));
       const explicit = all.filter(match => !match.item.implicit), local = all.filter(match => match.doc.file === owner);
       const matches = explicit.length ? explicit : local.length ? local : all;
       if (matches.length === 1) resolution = { status: 'found', file: matches[0].doc.file, targetKind: matches[0].item.kind, targetId: matches[0].item.id ?? undefined, fragmentStatus: 'found' };
@@ -91,8 +91,12 @@ export async function expandDirective(index: MarkdownIndex, args: ExpansionArgum
     }
     if (resolution.status === 'found' && resolution.file && fragment && !resolution.targetKind) {
       const document = index.data.documents.find(item => item.file === resolution.file);
-      if (fragment.startsWith('^') || !document) resolution.fragmentStatus = 'notIndexed';
-      else {
+      if (!document) resolution.fragmentStatus = 'notIndexed';
+      else if (fragment.startsWith('^')) {
+        const blocks = document.targets.filter(item => item.kind === 'obsidian-block' && item.label === fragment);
+        resolution.fragmentStatus = blocks.length === 1 ? 'found' : blocks.length ? 'ambiguous' : 'missing';
+        if (blocks.length === 1) { resolution.targetKind = 'obsidian-block'; resolution.targetId = blocks[0].id ?? undefined; }
+      } else {
         const identifier = normalizeLabel(fragment)?.identifier;
         const sections = document.sections.filter(item => item.id === fragment || item.headingPath.join('#').toLowerCase() === fragment.toLowerCase() || item.title.toLowerCase() === fragment.toLowerCase() || item.labels.some(label => normalizeLabel(label)?.identifier === identifier));
         const labels = document.targets.filter(item => item.kind !== 'section' && item.identifier === identifier);

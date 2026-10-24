@@ -16,7 +16,7 @@ import * as exercise from 'myst-ext-exercise';
 import * as button from 'myst-ext-button';
 import * as builder from 'unist-builder';
 import * as vfiles from 'vfile';
-import { parsePreview } from '../preview-parser';
+import { parseMarkdown } from '../markdown-parser';
 import { previewMystOptions } from '../myst-options';
 import type { PluginDiagnostic } from './events';
 import { parseExpansion } from './expansion-parser';
@@ -126,7 +126,7 @@ async function start() {
     requestId = id; diagnostics = [];
     try {
       const vfile = new vfiles.VFile({ path: file });
-      const tree = workerData.expansion ? parseExpansion(source, vfile, pluginDirectives, pluginRoles, settings, maxDepth) : parsePreview(source, { ...previewMystOptions,
+      const tree = workerData.expansion ? parseExpansion(source, vfile, pluginDirectives, pluginRoles, settings, maxDepth) : parseMarkdown(source, { ...previewMystOptions,
         directives: [...previewMystOptions.directives, ...pluginDirectives], roles: [...previewMystOptions.roles, ...pluginRoles],
         extensions: { ...previewMystOptions.extensions, math: settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile }).tree;
       const messages = vfile.messages.map(item => ({ reason: item.reason, line: item.line, column: item.column, fatal: item.fatal }));

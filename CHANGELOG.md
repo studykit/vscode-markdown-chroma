@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Share preview syntax with CLI/API/MCP indexing and expansion: visible heading titles, Obsidian comments, highlights, and footnotes stay consistent. Source reads still return the original saved Markdown.
+- Resolve file-local Obsidian block IDs in backlinks and explicit embeds, report duplicate IDs as ambiguous, and rebuild older indexes automatically.
+- Preserve prose after Obsidian comments and serialize dropdown summaries, chemistry roles, and supported inline formatting in directive expansion.
+
 - Use one MyST parser with Obsidian syntax for all previews, including project-plugin bodies. Highlights, callouts, tags, and inline footnotes compose with MyST directives and roles.
 - Apply MyST math, definition lists, and comments without requiring a project or another MyST construct, and preserve straight quotes.
 - Keep footnote return links inside the final paragraph, including multiple references.
