@@ -20,6 +20,7 @@ export async function fixture(t: TestContext, files: Record<string, string>, dir
   await vault.refresh();
   const settings = { maxEmbedDepth: 5 };
   const host: PreviewHost = {
+    markdownFiles: source => vault.markdownFiles(source),
     resolve: (target, source) => vault.resolve(target, source),
     read: file => vault.read(file),
     documentUri: file => ({ fsPath: file, scheme: 'file' }),

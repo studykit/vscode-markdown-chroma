@@ -31,6 +31,7 @@ export type Resolution =
   | { status: 'missing' | 'ambiguous' | 'outside'; candidates?: string[] };
 
 export interface PreviewHost {
+  markdownFiles?(source: string): Iterable<string>;
   parseMystPlugins?(source: string, file: string, project: Record<string, any>): PluginParseResult | undefined;
   resolve(target: string, source?: string): Resolution;
   read(file: string): string | undefined;

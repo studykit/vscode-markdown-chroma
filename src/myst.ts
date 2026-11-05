@@ -1,4 +1,6 @@
 import GithubSlugger from 'github-slugger';
+import * as path from 'node:path';
+import { normalizeLabel } from 'myst-common';
 import { footnoteBacklinks, assignFootnoteNumbers } from './footnotes';
 import type MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
@@ -65,6 +67,7 @@ function applyObsidianBlocks(tree: Node, tokens: Token[]): Token[] {
 export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownIt {
   const nativeParse = md.parse.bind(md);
   let referenceCache: { source: string; tokens: Token[] } | undefined;
+  const targetCache = new Map<string, { source: string; settings: string; state: ReferenceState }>();
   const TokenClass = nativeParse('', {})[0]?.constructor as typeof Token | undefined;
   // Empty input has no tokens; obtain the constructor from a paragraph.
   const TokenType = TokenClass ?? nativeParse('x', {})[0].constructor as typeof Token;
@@ -73,6 +76,10 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     children: value.children?.map(reviveToken) ?? null
   });
   const previewRender = (source: string, env: RenderEnvironment) => md.render(source, env);
+  const nativeRender = md.renderer.render.bind(md.renderer);
+  // VS Code also consumes parse tokens for its Markdown language service.
+  // Keep a heading outline there while the MyST AST owns rendered content.
+  md.renderer.render = (tokens, settings, env) => nativeRender(tokens.filter(token => !token.meta?.mystOutline), settings, env);
   const parse = (source: string, file?: string, project: Settings = {}) => {
     const vfile = new VFile({ path: file });
     // Executable declarations come from myst.yml only. Re-discover for each
@@ -94,6 +101,12 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     normalizeGlossaries(tree, source, body => parseMarkdown(body, parseOptions).tree, vfile);
     const referenceTokens = applyObsidianBlocks(tree, parsed.tokens);
     basicTransformations(tree, vfile);
+    const headingsByLine = new Map(referenceTokens.filter(token => token.type === 'heading_open' && token.map).map(token => [token.map![0], token]));
+    walk(tree, node => {
+      if (node.type !== 'heading') return;
+      const token = headingsByLine.get(node.position?.start.line - 1);
+      if (token) token.meta = { ...token.meta, mystIdentifier: node.identifier, mystAnchor: node.html_id ?? node.identifier, mystTitle: text(node) };
+    });
     glossaryTransform(tree, vfile);
     abbreviationTransform(tree, { abbreviations: project.abbreviations });
     return { tree, vfile, referenceTokens };
@@ -139,7 +152,19 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     } };
     token.map = [0, source.split('\n').length];
     const frontmatter = header ? nativeParse(header, env).filter(item => /^(?:frontmatter|front_matter)/.test(item.type)) : [];
-    return [...frontmatter, token];
+    const outline: Token[] = [];
+    const references = token.meta.referenceTokens() as Token[];
+    for (let index = 0; index < references.length; index++) {
+      const heading = references[index];
+      if (heading.type !== 'heading_open') continue;
+      const open = reviveToken(heading); open.meta = { mystOutline: true };
+      const inline = new TokenType('inline', '', 0); inline.meta = { mystOutline: true };
+      const title = new TokenType('text', '', 0); title.content = heading.meta?.mystTitle ?? references[index + 1]?.content ?? '';
+      inline.content = title.content; inline.children = [title];
+      const close = new TokenType('heading_close', heading.tag, -1); close.meta = { mystOutline: true };
+      outline.push(open, inline, close);
+    }
+    return [...frontmatter, token, ...outline];
   };
 
   md.renderer.rules.myst_document = (tokens, index, _options, env: RenderEnvironment) => {
@@ -191,7 +216,11 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     prepare(tree, env, file ? [file] : []);
     resolveGlossaryAliases(tree);
     const slugger = new GithubSlugger();
-    walk(tree, node => { if (node.type === 'heading' && node.implicit) node.html_id = `${env.obsidian?.prefix ?? ''}${slugger.slug(text(node))}`; });
+    walk(tree, node => {
+      if (node.type !== 'heading') return;
+      node._nativeAnchor = `${env.obsidian?.prefix ?? ''}${slugger.slug(text(node))}`;
+      if (node.implicit) node.html_id = node._nativeAnchor;
+    });
     const state = new ReferenceState(file, { vfile, frontmatter: { ...metadata, numbering: validateNumbering(metadata.numbering, { property: 'numbering', messages: {} }) } });
     enumerateTargetsTransform(tree, { state });
     // The project CLI marks unmatched bibliography shorthand before resolving
@@ -199,6 +228,73 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     walk(tree, node => { if (node.type === 'cite' && state.getTarget(node.identifier)) node.error = true; });
     resolveLinksAndCitationsTransform(tree, { state });
     resolveReferencesTransform(tree, vfile, { state });
+    // Standalone MyST transforms only know the current document. Discover
+    // external section labels using the same tokenizer, without running project
+    // plugins or expanding includes in documents that are merely link targets.
+    const externalStates = new Map<string, ReferenceState>();
+    const targetState = (targetFile: string): ReferenceState | undefined => {
+      const existing = externalStates.get(targetFile);
+      if (existing) return existing;
+      if (++readBudget.count > 100) return;
+      const source = host.read(targetFile);
+      if (source === undefined || (readBudget.bytes += Buffer.byteLength(source)) > 4 * 1024 * 1024) return;
+      const header = stripHeader(source);
+      const settings = mergeSettings(mystConfiguration(host, { currentDocument: host.documentUri(targetFile) }).project, header.metadata);
+      const signature = JSON.stringify(settings);
+      const cached = targetCache.get(targetFile);
+      let target = cached?.source === source && cached.settings === signature ? cached.state : undefined;
+      if (!target) {
+        const parsed = parse(header.body, undefined, settings);
+        const slugs = new GithubSlugger();
+        walk(parsed.tree, node => {
+          if (node.type !== 'heading') return;
+          const anchor = slugs.slug(text(node));
+          if (node.implicit) node.html_id = anchor;
+        });
+        target = new ReferenceState(targetFile, { vfile: parsed.vfile, frontmatter: { ...settings, numbering: validateNumbering(settings.numbering, { property: 'numbering', messages: {} }) } });
+        enumerateTargetsTransform(parsed.tree, { state: target });
+        // Bound retained source/AST snapshots as well as each render's reads.
+        while (targetCache.size && (targetCache.size >= 32 || [...targetCache.values()].reduce((sum, entry) => sum + Buffer.byteLength(entry.source), 0) + Buffer.byteLength(source) > 4 * 1024 * 1024)) targetCache.delete(targetCache.keys().next().value!);
+        targetCache.set(targetFile, { source, settings: signature, state: target });
+      }
+      externalStates.set(targetFile, target);
+      return target;
+    };
+    let discovered = false;
+    let discoveryComplete = true;
+    walk(tree, node => {
+      if (node.type !== 'crossReference' || node.resolved || !node.identifier) return;
+      const environment = environments.get(node) ?? env;
+      const sourceFile = environment.currentDocument?.fsPath;
+      if (!sourceFile || (environment.currentDocument?.scheme && environment.currentDocument.scheme !== 'file')) return;
+      let label = node.identifier;
+      let target: ReferenceState | undefined;
+      const hash = (node.label ?? '').indexOf('#');
+      if (hash > 0) {
+        const destination = node.label.slice(0, hash);
+        const resolved = fileFor(destination.startsWith('.') ? destination : `./${destination}`, environment) ?? fileFor(destination, environment);
+        label = normalizeLabel(node.label.slice(hash + 1))?.identifier;
+        if (resolved && path.extname(resolved).toLowerCase() === '.md') target = targetState(resolved);
+      } else {
+        if (!discovered) {
+          discovered = true;
+          for (const candidate of host.markdownFiles?.(file) ?? []) {
+            if (candidate === file) continue;
+            if (!targetState(candidate)) { discoveryComplete = false; break; }
+          }
+        }
+        // Never select a duplicate label, or guess after an incomplete scan.
+        const matches = [...externalStates.values()].filter(candidate => candidate.getTarget(label));
+        if (discoveryComplete && matches.length === 1) target = matches[0];
+      }
+      if (!target?.getTarget(label)) return;
+      node.identifier = label;
+      resolveReferencesTransform({ type: 'root', children: [node] }, vfile, { state: target });
+      if (node.resolved) {
+        const destination = path.relative(path.dirname(sourceFile), target.filePath).split(path.sep).map(encodeURIComponent).join('/');
+        node.url = `./${destination}#${encodeURIComponent(node.html_id ?? label)}`;
+      }
+    });
     const allNodes: Node[] = [];
     walk(tree, node => allNodes.push(node));
     const footnoteNumbers = assignFootnoteNumbers(allNodes.filter(node => node.type === 'footnoteReference').map(node => node.identifier));
@@ -219,8 +315,13 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       try { for (const entry of new Cite(bib.content).data) bibliography.set(String(entry.id).toLowerCase(), entry); } catch { /* Render unresolved citations below. */ }
     }
     const identifier = (node: Node) => node.html_id || node.identifier || (node._obsidianBlockId ? `${env.obsidian?.prefix ?? ''}obsidian-block-${node._obsidianBlockId}` : '');
+    const existingIds = new Set(allNodes.map(identifier).filter(Boolean));
     const idAttr = (node: Node) => identifier(node) ? ` id="${escape(identifier(node))}"` : '';
-    const attr = (node: Node) => `${idAttr(node)}${node.class ? ` class="${escape(node.class)}"` : ''}`;
+    const attr = (node: Node, sourceMap = false) => {
+      const line = sourceMap && Number.isSafeInteger(node.position?.start.line) ? node.position.start.line - 1 : undefined;
+      const classes = [node.class, line === undefined ? '' : 'code-line'].filter(Boolean).join(' ');
+      return `${idAttr(node)}${classes ? ` class="${escape(classes)}"` : ''}${line === undefined ? '' : ` data-line="${line}"`}`;
+    };
     const extraAnchor = (node: Node) => node._obsidianBlockId && (node.html_id || node.identifier)
       ? `<span id="${escape(`${env.obsidian?.prefix ?? ''}obsidian-block-${node._obsidianBlockId}`)}"></span>` : '';
     const render = (node: Node, stack: string[] = [], preserveLineBreaks = false): string => {
@@ -249,7 +350,16 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         }
         case 'paragraph': return tag('p');
         case 'block': return tag('div', ` class="myst-block ${escape(node.class ?? '')}"${idAttr(node)}`);
-        case 'heading': return tag(`h${Math.min(6, Math.max(1, node.depth))}`);
+        // VS Code's cross-document fragment navigation searches its source map,
+        // rather than all DOM IDs. Included/embedded source lines belong to a
+        // different editor and must not enter the containing preview's map.
+        case 'heading': {
+          const sourceMap = !environment.mystIncluded && !environment.obsidian?.prefix && !notebookContext;
+          const nativeAnchor = node._nativeAnchor ? encodeURIComponent(node._nativeAnchor) : '';
+          const alias = nativeAnchor && nativeAnchor !== identifier(node) && !existingIds.has(nativeAnchor)
+            ? `<span${attr({ ...node, html_id: nativeAnchor }, sourceMap)}></span>` : '';
+          return alias + tag(`h${Math.min(6, Math.max(1, node.depth))}`, attr(node, sourceMap));
+        }
         case 'emphasis': return tag('em');
         case 'strong': return tag('strong');
         case 'underline': return tag('u');
@@ -289,7 +399,12 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
           if (node.title) open.attrSet('title', node.title);
           return md.renderer.render([open], md.options, environment) + (children() || (target ? escape(`${target.type === 'container' ? target.kind : target.type} ${target.enumerator ?? target.label ?? ''}`) : '')) + '</a>';
         }
-        case 'crossReference': return node.resolved ? tag('a', ` href="${escape(safeUrl(node.url ?? `#${node.html_id ?? node.identifier}`))}"`) : `<span class="myst-unresolved">${children() || escape(node.label ?? node.identifier)}</span>`;
+        case 'crossReference': {
+          if (!node.resolved) return `<span class="myst-unresolved">${children() || escape(node.label ?? node.identifier)}</span>`;
+          const open = new TokenType('link_open', 'a', 1);
+          open.attrSet('href', safeUrl(node.url ?? `#${node.html_id ?? node.identifier}`));
+          return md.renderer.render([open], md.options, environment) + children() + '</a>';
+        }
         case 'image': {
           const url = resource(node.url, environment);
           const style = `width:${size(node.width) || 'auto'};height:${size(node.height) || 'auto'};${node.align === 'center' ? 'display:block;margin-inline:auto;' : node.align === 'right' ? 'display:block;margin-left:auto;' : ''}`;

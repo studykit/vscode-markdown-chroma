@@ -124,6 +124,13 @@ export class FileVault {
     } catch { return; }
   }
 
+  *markdownFiles(source: string): Iterable<string> {
+    if (!isWithin(this.root, source)) return;
+    for (const file of this.files.values()) {
+      if (path.extname(file).toLowerCase() === '.md' && this.safeFile(file)) yield file;
+    }
+  }
+
   updateAliases(file: string, source: string): void {
     if (!isWithin(this.root, file)) return;
     for (const [alias, files] of this.aliases) {

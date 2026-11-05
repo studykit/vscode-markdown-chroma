@@ -81,6 +81,7 @@ export async function activate(context: vscode.ExtensionContext) {
     refreshPreviews();
   };
   const host: PreviewHost = {
+    markdownFiles: source => forSource(source)?.markdownFiles(source) ?? [],
     parseMystPlugins: (source, file, project) => plugins.parse(source, file, rootFor(file), project,
       vscode.workspace.getConfiguration('markdownChroma.preview', vscode.Uri.file(file)).get<boolean>('projectPlugins', false),
       vscode.workspace.isTrusted && !!vscode.workspace.getWorkspaceFolder(vscode.Uri.file(file))),
