@@ -28,6 +28,11 @@ test('traversal and symlink escapes cannot read outside the vault', async t => {
   assert.equal(f.vault.read(path.join(f.root, 'escape.md')), undefined);
   assert.equal(f.vault.read(outside), undefined);
   assert.equal(isWithin(f.root, `${f.root}-other/file`), false);
+  assert.deepEqual([...f.vault.markdownFiles(source)].sort(), [source, path.join(f.root, 'inside.md')].sort());
+  assert.deepEqual([...f.vault.markdownFiles(outside)], []);
+  await fs.unlink(path.join(f.root, 'inside.md'));
+  await fs.symlink(outside, path.join(f.root, 'inside.md'));
+  assert.deepEqual([...f.vault.markdownFiles(source)], [source], 'Revalidate files replaced by symlinks after indexing');
 });
 
 test('alias edits and renamed or deleted files update the index', async t => {

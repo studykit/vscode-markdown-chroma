@@ -55,6 +55,9 @@ export function createMarkdownTokenizer(options: MarkdownParseOptions = {}): Mar
     vfile
   };
   const md = createTokenizer(settings) as unknown as MarkdownIt;
+  // Dotted names in prose are not necessarily domains (for example remi.ni).
+  // Keep explicit URLs and email links without guessing bare hostnames.
+  md.linkify.set({ fuzzyLink: false });
   installObsidianSyntax(md, true);
   // MyST comments consume a whole line; %% comments must leave trailing prose.
   md.block.ruler.at('myst_line_comment', (state, start, _end, silent) => {

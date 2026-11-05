@@ -287,6 +287,31 @@ export async function run(): Promise<void> {
   const crossReferenceHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', crossReferences))!;
   assertCrossReferences(new JSDOM(crossReferenceHtml).window.document);
   console.log('PASS: actual VS Code renderer resolves MyST reference names, numbers, formatting and all anchors');
+  const refScratch = await fs.mkdtemp(path.join(mystRoot, 'ref-navigation-'));
+  try {
+    const localSource = '(ny2027-section-7)=\n## 공통 수단\n\n{ref}`두 시나리오에 공통인 기능별 수단 <ny2027-section-7>`에서 조치를 찾고, {ref}`코드 근거 <ny2027-direct-relay-section-8>`\n\n[명시한 파일](Direct%20relay.md#ny2027-direct-relay-section-8)\n\nmalang.cow / remi.ni\n\nhttps://example.com';
+    const targetSource = '(ny2027-direct-relay-section-8)=\n## 코드 근거\n';
+    await fs.writeFile(path.join(refScratch, 'source.md'), localSource);
+    await fs.writeFile(path.join(refScratch, 'Direct relay.md'), targetSource);
+    const sourceDocument = await vscode.workspace.openTextDocument(path.join(refScratch, 'source.md'));
+    const targetDocument = await vscode.workspace.openTextDocument(path.join(refScratch, 'Direct relay.md'));
+    await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+    const rendered = new JSDOM((await vscode.commands.executeCommand<string>('markdown.api.render', sourceDocument))!).window.document;
+    assert.equal(rendered.querySelector('a[href="#ny2027-section-7"]')?.textContent, '두 시나리오에 공통인 기능별 수단');
+    const remoteHref = `Direct%20relay.md#${encodeURIComponent('코드-근거')}`;
+    const remote = rendered.querySelector(`a[href="${remoteHref}"]`);
+    assert.equal(remote?.textContent, '코드 근거');
+    assert.equal(remote?.getAttribute('data-href'), remote?.getAttribute('href'));
+    assert.equal(rendered.querySelectorAll(`a[href="${remoteHref}"]`).length, 2);
+    assert.equal(rendered.querySelector('.myst-unresolved'), null);
+    const target = new JSDOM((await vscode.commands.executeCommand<string>('markdown.api.render', targetDocument))!).window.document;
+    assert.ok(target.getElementById('ny2027-direct-relay-section-8'));
+    assert.equal(target.querySelector('h2#ny2027-direct-relay-section-8.code-line')?.getAttribute('data-line'), '1');
+    assert.ok(target.getElementById(encodeURIComponent('코드-근거'))?.classList.contains('code-line'));
+    assert.ok([...rendered.querySelectorAll('p')].some(node => node.textContent === 'malang.cow / remi.ni' && !node.querySelector('a')));
+    assert.ok(rendered.querySelector('a[href="https://example.com"]'));
+    console.log('PASS: native preview resolves local/external Korean ref links and leaves dotted names as prose');
+  } finally { await fs.rm(refScratch, { recursive: true, force: true }); }
   const previewScratch = await fs.mkdtemp(path.join(mystRoot, 'preview-root-'));
   const sharedName = `${path.basename(previewScratch)}-shared.md`;
   const sharedFile = path.join(mystRoot, sharedName);

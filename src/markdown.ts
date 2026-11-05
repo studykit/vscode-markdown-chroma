@@ -56,7 +56,7 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
       const source = host.read(resolution.path);
       const section = source === undefined ? undefined : findSection(md, source, reference.fragment);
       if (!section) return `<span class="obsidian-link is-unresolved" title="Heading or block not found.">${escape(label)}</span>`;
-      anchor = section.anchor;
+      anchor = resolution.path === sourcePath(env) ? section.anchor : section.navigationAnchor ?? section.anchor;
     } else anchor = reference.fragment;
     const href = fileHref(resolution.path, anchor, env);
     return `<a class="obsidian-link" href="${escape(href)}" data-href="${escape(href)}">${escape(label)}</a>`;
@@ -210,7 +210,8 @@ export function extendObsidianMarkdown(md: MarkdownIt, host: PreviewHost): Markd
       let fragment = target.fragment;
       if (fragment && path.extname(target.resolution.path).toLowerCase() === '.md') {
         const source = host.read(target.resolution.path);
-        fragment = source === undefined ? fragment : findSection(md, source, fragment)?.anchor ?? fragment;
+        const section = source === undefined ? undefined : findSection(md, source, fragment);
+        fragment = section?.navigationAnchor ?? section?.anchor ?? fragment;
       }
       const href = fileHref(target.resolution.path, fragment, env);
       copy[index].attrSet('href', href);

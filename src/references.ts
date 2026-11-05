@@ -1,6 +1,7 @@
 import type MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import GithubSlugger from 'github-slugger';
+import { normalizeLabel } from 'myst-common';
 import type { WikiReference } from './types';
 
 export function parseWiki(raw: string): WikiReference | undefined {
@@ -30,11 +31,12 @@ export interface Section {
   start: number;
   end: number;
   anchor: string;
+  navigationAnchor?: string;
 }
 
 /** Parse real Markdown blocks so headings/IDs inside code never become targets. */
 export function findSection(md: MarkdownIt, source: string, fragment: string): Section | undefined {
-  const tokens: Token[] = md.parse(source, {}).flatMap(token => token.type === 'myst_document' ? token.meta.referenceTokens() : [token]);
+  const tokens: Token[] = md.parse(source, {}).flatMap(token => token.type === 'myst_document' ? token.meta.referenceTokens() : token.meta?.mystOutline ? [] : [token]);
   if (fragment.startsWith('^')) {
     const id = fragment.slice(1);
     const token = tokens.find(item => item.attrGet('data-obsidian-block') === id);
@@ -43,24 +45,26 @@ export function findSection(md: MarkdownIt, source: string, fragment: string): S
   }
   const slugger = new GithubSlugger();
   const parents: { level: number; title: string }[] = [];
-  const headings: { start: number; level: number; title: string; trail: string; anchor: string }[] = [];
+  const headings: { start: number; level: number; title: string; trail: string; anchor: string; navigationAnchor: string; identifier?: string }[] = [];
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     if (token.type !== 'heading_open' || !token.map) continue;
-    const title = plainText(tokens[index + 1]);
+    const title = token.meta?.mystTitle ?? plainText(tokens[index + 1]);
     const level = Number(token.tag.slice(1));
     while (parents.length && parents.at(-1)!.level >= level) parents.pop();
     parents.push({ level, title });
-    headings.push({ start: token.map[0], level, title, trail: parents.map(item => item.title).join('#'), anchor: slugger.slug(title) });
+    const navigationAnchor = slugger.slug(title);
+    headings.push({ start: token.map[0], level, title, trail: parents.map(item => item.title).join('#'), anchor: token.meta?.mystAnchor ?? navigationAnchor, navigationAnchor, identifier: token.meta?.mystIdentifier });
   }
   const normalized = fragment.normalize('NFC').toLocaleLowerCase();
+  const identifier = normalizeLabel(fragment)?.identifier;
   const index = headings.findIndex(heading =>
     (fragment.includes('#') ? heading.trail : heading.title).normalize('NFC').toLocaleLowerCase() === normalized
-    || heading.anchor === fragment);
+    || heading.anchor === fragment || (!!identifier && heading.identifier === identifier));
   if (index < 0) return;
   const heading = headings[index];
   const next = headings.slice(index + 1).find(candidate => candidate.level <= heading.level);
-  return { start: heading.start, end: next?.start ?? source.split('\n').length, anchor: heading.anchor };
+  return { start: heading.start, end: next?.start ?? source.split('\n').length, anchor: heading.anchor, navigationAnchor: heading.navigationAnchor };
 }
 
 export function sectionSource(source: string, section: Section, md?: MarkdownIt): string {

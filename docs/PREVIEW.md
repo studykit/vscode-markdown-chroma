@@ -111,7 +111,7 @@ Every preview uses the same MyST parser with Obsidian syntax enabled, including 
 | Images, figures, and videos | Image dimensions and alignment, captions, numbering, references, MP4, and local image wildcards |
 | Math and equations | KaTeX math, labels, and equation references |
 | Tables and code | Tables, list-table, code, and captions; table/code captions appear above their content |
-| Cross-references | In-document `[](#label)`, `@label`, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Document links use standard Markdown navigation; content hover popups are not supported |
+| Cross-references | In-document `[](#label)`, `@label`, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Reference roles also find unique section labels in other Markdown files inside the document root, or an explicit `file.md#label`. Document links use standard Markdown navigation; content hover popups are not supported |
 | Embeds and includes | Local include/literalinclude, label embeds, and saved Jupyter notebook outputs |
 | Citations and bibliography | Local BibTeX files selected by frontmatter or a bibliography directive |
 | Proofs and exercises | Theorems, proofs, exercises, solutions, and numbering |
@@ -122,6 +122,10 @@ Every preview uses the same MyST parser with Obsidian syntax enabled, including 
 | Contents, dropdowns, and chemistry | `{toc}` links to headings in the rendered document; `{dropdown}` renders a native disclosure; `{chem}` formats formula subscripts |
 
 Examples: [overview](../examples/myst/index.md), [layouts](../examples/myst/layout.md), [syntax](../examples/myst/syntax.md), and [glossaries](../examples/myst/glossary.md). The glossary example covers multiple glossaries, `{term}` references, custom display text, and references placed before definitions. See the official [MyST authoring guide](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), and [figures](https://mystmd.org/guide/figures) documentation for syntax.
+
+For example, `` {ref}`Code evidence <relay-section>` `` first looks for `(relay-section)=` in the rendered document, then in other Markdown files within the document root. Custom display text is preserved. Duplicate external labels remain unresolved; use `` {ref}`Code evidence <relay.md#relay-section>` `` to select a file. Cross-file discovery shares the preview's bounded read budget (100 files and 4 MiB), reads unsaved open documents, and does not run plugins or expand includes in target files.
+
+Plain dotted names such as `malang.cow / remi.ni` remain text. Use an explicit URL such as `https://remi.ni` or `[Profile](https://remi.ni)` for a web link. Email addresses continue to link automatically.
 
 By default, the preview displays local files without executing project code. Automatic DOI or external project lookup, Jupyter execution, `.tex` conversion, PDF/EPS/TIFF image conversion, and PDF/Word publishing are outside its scope. External iframes appear as links under the built-in Preview's security policy. Invalid or unsupported directives display an error message. Frontmatter and Obsidian footnotes retain their existing presentation.
 

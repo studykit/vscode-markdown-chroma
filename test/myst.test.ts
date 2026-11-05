@@ -150,6 +150,82 @@ test('implicit heading references activate MyST without a project or directive',
   }
 });
 
+test('ref roles preserve Korean display text for local and cross-file section labels', async t => {
+  const local = '(ny2027-section-7)=\n## 공통 수단\n\n';
+  const links = '{ref}`두 시나리오에 공통인 기능별 수단 <ny2027-section-7>`에서 조치를 찾고, {ref}`코드 근거 <ny2027-direct-relay-section-8>`';
+  const f = await fixture(t, {
+    'Main.md': local + links,
+    'relay/Direct relay.md': '(ny2027-direct-relay-section-8)=\n## 코드 근거\n',
+    'duplicate.md': local,
+    'another-duplicate.md': local,
+  });
+  extendMystMarkdown(f.md, f.host);
+  const doc = dom(f.render(local + links));
+  assert.equal(doc.querySelector('a[href="#ny2027-section-7"]')?.textContent, '두 시나리오에 공통인 기능별 수단');
+  const remoteHref = `relay/Direct%20relay.md#${encodeURIComponent('코드-근거')}`;
+  const remote = doc.querySelector(`a[href="${remoteHref}"]`);
+  assert.equal(remote?.textContent, '코드 근거');
+  assert.equal(remote?.getAttribute('data-href'), remote?.getAttribute('href'));
+  assert.equal(doc.querySelector('.myst-unresolved'), null);
+  const destination = dom(f.render('(ny2027-direct-relay-section-8)=\n## 코드 근거', 'relay/Direct relay.md'));
+  assert.ok(destination.getElementById('ny2027-direct-relay-section-8'));
+  assert.ok(destination.getElementById(encodeURIComponent('코드-근거'))?.classList.contains('code-line'));
+  assert.equal(dom(f.render('{ref}`ny2027-section-7`')).querySelector('a'), null, 'Duplicate external labels remain unresolved');
+
+  const tokens = f.md.parse(links, f.environment());
+  f.dirty.set(`${f.root}/relay/Direct relay.md`, '(changed-label)=\n## Unsaved\n');
+  const changed = dom(f.md.renderer.render(tokens, f.md.options, f.environment()));
+  assert.equal(changed.querySelector(`a[href="${remoteHref}"]`), null, 'Cached targets refresh from dirty buffers');
+});
+
+test('external ref targets respect explicit paths, source context and root boundaries', async t => {
+  const f = await fixture(t, {
+    'Main.md': '',
+    'sub/Source.md': '',
+    'sub/Target.md': '(section)=\n## Target section\n',
+    'Other.md': '(section)=\n## Duplicate section\n',
+    'Code.md': '```md\n(fake-label)=\n## Fake\n```',
+  });
+  extendMystMarkdown(f.md, f.host);
+  const doc = dom(f.render('{ref}`Section <Target.md#section>`', 'sub/Source.md'));
+  assert.equal(doc.querySelector('a')?.getAttribute('href'), 'Target.md#target-section');
+  const explicit = dom(f.render('(section)=\n## Local\n\n[제목](Target.md#section)', 'sub/Source.md'));
+  assert.equal(explicit.querySelector('a')?.getAttribute('href'), 'Target.md#target-section', 'An explicit file wins over a matching local or global label');
+  for (const label of ['../outside.md#section', 'fake-label', 'missing-label']) {
+    assert.equal(dom(f.render(`{ref}\`${label}\``)).querySelector('a'), null);
+  }
+});
+
+test('section headings expose native navigation positions without mapping embedded source lines', async t => {
+  const source = '---\ntitle: Source\n---\n\n(label)=\n## Section\n';
+  const f = await fixture(t, { 'Main.md': source, 'Target.md': source });
+  extendMystMarkdown(f.md, f.host);
+  const heading = dom(f.render(source)).querySelector('h2#label');
+  assert.ok(heading?.classList.contains('code-line'));
+  assert.equal(heading?.getAttribute('data-line'), '5');
+  const outline = f.md.parse(source, f.environment()).filter(token => token.meta?.mystOutline);
+  assert.deepEqual(outline.map(token => token.type), ['heading_open', 'inline', 'heading_close']);
+  assert.equal(outline[1].content, 'Section');
+  assert.equal(dom(f.render(source)).querySelectorAll('h2').length, 1, 'Native outline tokens do not render twice');
+  for (const embedded of ['![[Target]]', ':::{include} Target.md\n:::']) {
+    const doc = dom(f.render(embedded));
+    assert.ok(doc.querySelector('h2'));
+    assert.equal(doc.querySelector('h2.code-line, h2[data-line]'), null);
+  }
+});
+
+test('dotted prose stays literal while explicit URLs, Markdown links and emails remain linked', async t => {
+  const f = await fixture(t, { 'Main.md': '' });
+  extendMystMarkdown(f.md, f.host);
+  for (const source of ['malang.cow / remi.ni', ':::{note}\nmalang.cow / remi.ni\n:::', '`malang.cow / remi.ni`']) {
+    const doc = dom(f.render(source));
+    assert.equal(doc.querySelector('a'), null);
+    assert.match(doc.body.textContent ?? '', /malang\.cow \/ remi\.ni/);
+  }
+  const doc = dom(f.render('https://example.com <https://remi.ni> [Profile](https://remi.ni) author@example.com'));
+  assert.deepEqual([...doc.querySelectorAll('a')].map(link => link.getAttribute('href')), ['https://example.com', 'https://remi.ni', 'https://remi.ni', 'mailto:author@example.com']);
+});
+
 test('official MyST directives and roles render in a standalone Markdown file', async t => {
   const f = await fixture(t, { 'Main.md': '', 'Note.md': 'linked' });
   extendMystMarkdown(f.md, f.host);
