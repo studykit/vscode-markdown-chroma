@@ -293,6 +293,10 @@ export async function run(): Promise<void> {
     const targetSource = '(ny2027-direct-relay-section-8)=\n## 코드 근거\n';
     await fs.writeFile(path.join(refScratch, 'source.md'), localSource);
     await fs.writeFile(path.join(refScratch, 'Direct relay.md'), targetSource);
+    const unrelated = path.join(refScratch, 'unrelated');
+    await fs.mkdir(unrelated);
+    const filler = '```text\n' + 'Unrelated prose.\n'.repeat(2500) + '```\n';
+    await Promise.all(Array.from({ length: 110 }, (_, index) => fs.writeFile(path.join(unrelated, `${index}.md`), filler)));
     const sourceDocument = await vscode.workspace.openTextDocument(path.join(refScratch, 'source.md'));
     const targetDocument = await vscode.workspace.openTextDocument(path.join(refScratch, 'Direct relay.md'));
     await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
@@ -310,7 +314,7 @@ export async function run(): Promise<void> {
     assert.ok(target.getElementById(encodeURIComponent('코드-근거'))?.classList.contains('code-line'));
     assert.ok([...rendered.querySelectorAll('p')].some(node => node.textContent === 'malang.cow / remi.ni' && !node.querySelector('a')));
     assert.ok(rendered.querySelector('a[href="https://example.com"]'));
-    console.log('PASS: native preview resolves local/external Korean ref links and leaves dotted names as prose');
+    console.log('PASS: native preview resolves local/external Korean ref links beyond 100 files/4 MiB of unrelated Markdown and leaves dotted names as prose');
   } finally { await fs.rm(refScratch, { recursive: true, force: true }); }
   const previewScratch = await fs.mkdtemp(path.join(mystRoot, 'preview-root-'));
   const sharedName = `${path.basename(previewScratch)}-shared.md`;

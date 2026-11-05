@@ -178,6 +178,21 @@ test('ref roles preserve Korean display text for local and cross-file section la
   assert.equal(changed.querySelector(`a[href="${remoteHref}"]`), null, 'Cached targets refresh from dirty buffers');
 });
 
+test('external refs use the label index beyond 100 documents and 4 MiB of unrelated Markdown', async t => {
+  const filler = '```text\n' + 'Unrelated prose.\n'.repeat(2500) + '```\n';
+  const files = Object.fromEntries(Array.from({ length: 110 }, (_, index) => [`filler/${index}.md`, filler]));
+  const f = await fixture(t, { 'Main.md': '', ...files, 'z/Target.md': '(remote-label)=\n## Remote section\n' });
+  const read = f.host.read;
+  const markdownReads: string[] = [];
+  f.host.read = file => { if (file.endsWith('.md')) markdownReads.push(file); return read(file); };
+  extendMystMarkdown(f.md, f.host);
+  const doc = dom(f.render('{ref}`Evidence <remote-label>`'));
+  assert.equal(doc.querySelector('a')?.getAttribute('href'), 'z/Target.md#remote-section');
+  assert.equal(doc.querySelector('.myst-unresolved'), null);
+  assert.ok(markdownReads.length > 0);
+  assert.ok(markdownReads.every(file => file === `${f.root}/z/Target.md`), 'Only matching target documents consume render reads');
+});
+
 test('external ref targets respect explicit paths, source context and root boundaries', async t => {
   const f = await fixture(t, {
     'Main.md': '',

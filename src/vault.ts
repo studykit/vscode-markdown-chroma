@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { aliasesFrom } from './frontmatter';
+import { previewReferenceIdentifiers } from './preview-reference-index';
 import type { Resolution } from './types';
 
 const ignored = new Set(['.git', '.obsidian', 'node_modules']);
@@ -32,6 +34,7 @@ export class FileVault {
   private aliases = new Map<string, string[]>();
   private cached = new Map<string, { signature: string; source: string }>();
   private generation = 0;
+  private referenceRecords = new Map<string, { signature: string; identifiers: Set<string> }>();
 
   constructor(readonly root: string, private readonly dirtyText: (file: string) => string | undefined = () => undefined) {}
 
@@ -40,6 +43,7 @@ export class FileVault {
     const files = new Map<string, string>();
     const names = new Map<string, string[]>();
     const aliases = new Map<string, string[]>();
+    const referenceRecords = new Map<string, { signature: string; identifiers: Set<string> }>();
     const add = (map: Map<string, string[]>, name: string, file: string) => {
       const normalized = key(name);
       map.set(normalized, [...(map.get(normalized) ?? []), file]);
@@ -66,6 +70,11 @@ export class FileVault {
           for (const alias of aliasesFrom(source)) add(aliases, alias, file);
         } catch { /* An unreadable note can still be linked. */ }
         finally { await handle?.close(); }
+        const record = this.referenceRecord(file);
+        if (record) referenceRecords.set(file, record);
+        // A project can contain hundreds of Markdown files. Yield between
+        // documents instead of doing project discovery inside a render budget.
+        await new Promise<void>(resolve => setImmediate(resolve));
       }
     };
     await walk(this.root);
@@ -73,6 +82,7 @@ export class FileVault {
     this.files = files;
     this.names = names;
     this.aliases = aliases;
+    this.referenceRecords = referenceRecords;
     this.cached.clear();
   }
 
@@ -129,6 +139,30 @@ export class FileVault {
     for (const file of this.files.values()) {
       if (path.extname(file).toLowerCase() === '.md' && this.safeFile(file)) yield file;
     }
+  }
+
+  *referenceFiles(identifier: string, source: string): Iterable<string> {
+    for (const file of this.markdownFiles(source)) {
+      // Recheck signatures here too: dirty buffers and saves can precede the
+      // next debounced project refresh. Unrelated documents are not reparsed.
+      if (this.referenceRecord(file)?.identifiers.has(identifier)) yield file;
+    }
+  }
+
+  private referenceRecord(file: string) {
+    if (!this.safeFile(file)) return;
+    try {
+      const dirty = this.dirtyText(file);
+      const stat = fs.statSync(file);
+      const signature = dirty === undefined ? `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`
+        : `dirty:${createHash('sha256').update(dirty).digest('hex')}`;
+      const cached = this.referenceRecords.get(file);
+      if (cached?.signature === signature) return cached;
+      const source = this.read(file);
+      const record = { signature, identifiers: source === undefined ? new Set<string>() : previewReferenceIdentifiers(source) };
+      this.referenceRecords.set(file, record);
+      return record;
+    } catch { return; }
   }
 
   updateAliases(file: string, source: string): void {
