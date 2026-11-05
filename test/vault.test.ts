@@ -48,6 +48,29 @@ test('alias edits and renamed or deleted files update the index', async t => {
   assert.equal(f.vault.resolve('Renamed', source).status, 'found');
 });
 
+test('reference candidates track saved and dirty labels without executing or indexing literal code', async t => {
+  const f = await fixture(t, {
+    'Main.md': '',
+    'Target.md': '---\nexample: "(not-a-target)="\n---\n(real-label)=\n## Target\n\n```md\n(fake-label)=\n## Fake\n```',
+    'Other.md': '(real-label)=\nA labeled paragraph.\n',
+  });
+  const source = path.join(f.root, 'Main.md'), target = path.join(f.root, 'Target.md'), other = path.join(f.root, 'Other.md');
+  const candidates = (label: string) => [...f.vault.referenceFiles(label, source)].sort();
+  assert.deepEqual(candidates('real-label'), [other, target].sort());
+  assert.deepEqual(candidates('fake-label'), []);
+  assert.deepEqual(candidates('not-a-target'), []);
+  f.dirty.set(target, '(dirty-label)=\n## Unsaved\n');
+  assert.deepEqual(candidates('real-label'), [other]);
+  assert.deepEqual(candidates('dirty-label'), [target]);
+  f.dirty.delete(target);
+  assert.deepEqual(candidates('real-label'), [other, target].sort());
+  await fs.writeFile(target, '(saved-label)=\n## Saved\n');
+  assert.deepEqual(candidates('saved-label'), [target]);
+  await fs.rm(target);
+  assert.deepEqual(candidates('saved-label'), []);
+  assert.deepEqual([...f.vault.referenceFiles('real-label', path.join(f.root, '..', 'outside.md'))], []);
+});
+
 test('preview roots use the workspace or containing folder regardless of .obsidian directories', async t => {
   const f = await fixture(t, { 'vault/.obsidian/app.json': '{}', 'vault/sub/Note.md': '' });
   const source = path.join(f.root, 'vault/sub/Note.md');

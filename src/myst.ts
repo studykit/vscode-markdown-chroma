@@ -276,16 +276,22 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         label = normalizeLabel(node.label.slice(hash + 1))?.identifier;
         if (resolved && path.extname(resolved).toLowerCase() === '.md') target = targetState(resolved);
       } else {
-        if (!discovered) {
-          discovered = true;
-          for (const candidate of host.markdownFiles?.(file) ?? []) {
-            if (candidate === file) continue;
-            if (!targetState(candidate)) { discoveryComplete = false; break; }
+        if (host.referenceFiles) {
+          const candidates = [...host.referenceFiles(label, sourceFile)].filter(candidate => candidate !== file);
+          if (candidates.length === 1) target = targetState(candidates[0]);
+        } else {
+          if (!discovered) {
+            discovered = true;
+            for (const candidate of host.markdownFiles?.(file) ?? []) {
+              if (candidate === file) continue;
+              if (!targetState(candidate)) { discoveryComplete = false; break; }
+            }
           }
+          // Legacy hosts without a static inventory must retain bounded reads
+          // and cannot choose a target after an incomplete project scan.
+          const matches = [...externalStates.values()].filter(candidate => candidate.getTarget(label));
+          if (discoveryComplete && matches.length === 1) target = matches[0];
         }
-        // Never select a duplicate label, or guess after an incomplete scan.
-        const matches = [...externalStates.values()].filter(candidate => candidate.getTarget(label));
-        if (discoveryComplete && matches.length === 1) target = matches[0];
       }
       if (!target?.getTarget(label)) return;
       node.identifier = label;

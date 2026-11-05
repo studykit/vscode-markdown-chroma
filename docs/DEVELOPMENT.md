@@ -70,7 +70,7 @@ Choose verification according to the change:
 | --- | --- |
 | VS Code activation, document context, file watching, and preview refresh | `src/extension.ts` |
 | Shared Obsidian syntax and native preview rendering | `src/obsidian-syntax.ts`, `src/markdown.ts`, `src/footnotes.ts`, `src/frontmatter.ts`, `src/callout-icons.ts` |
-| Preview document lookup, aliases, and file access | `src/vault.ts` |
+| Preview document lookup, aliases, static reference inventory, and file access | `src/vault.ts`, `src/preview-reference-index.ts` |
 | Shared Markdown parsing, MyST rendering, code lines, references, optional configuration, and shared glossary normalization | `src/markdown-parser.ts`, `src/source-positions.ts`, `src/myst.ts`, `src/code-lines.ts`, `src/references.ts`, `src/myst-config.ts`, `src/glossary.ts` |
 | Opt-in MyST preview plugin lifecycle, diagnostics, isolated parsing, and local module loading | `src/myst-options.ts`, `src/preview-plugins/manager.ts`, `src/preview-plugins/events.ts`, `src/preview-plugins/diagnostics.ts`, `src/preview-plugins/worker.ts`, `src/preview-plugins/loader.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
