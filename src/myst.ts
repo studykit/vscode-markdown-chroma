@@ -307,7 +307,6 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       node.type = 'crossReference';
       node.identifier = reference.identifier;
       node.label = label;
-      node._unqualified = !label.includes('#');
       delete node.url; delete node.error;
     });
     let discovered = false;
@@ -328,7 +327,12 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       } else {
         if (host.referenceFiles) {
           const candidates = [...host.referenceFiles(label, sourceFile)].filter(candidate => candidate !== file);
+          // Like the project index, explicit labels win over implicit heading
+          // slugs; a single remaining candidate is selected.
+          const states = candidates.length > 1 ? candidates.map(targetState).filter((state): state is ReferenceState => !!state) : [];
+          const explicit = states.filter(state => !(state.getTarget(label)?.node as Node | undefined)?.implicit);
           if (candidates.length === 1) target = targetState(candidates[0]);
+          else if (states.length === candidates.length && explicit.length === 1) target = explicit[0];
         } else {
           if (!discovered) {
             discovered = true;
@@ -340,12 +344,12 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
           // Legacy hosts without a static inventory must retain bounded reads
           // and cannot choose a target after an incomplete project scan.
           const matches = [...externalStates.values()].filter(candidate => candidate.getTarget(label));
-          if (discoveryComplete && matches.length === 1) target = matches[0];
+          const explicit = matches.filter(state => !(state.getTarget(label)?.node as Node | undefined)?.implicit);
+          if (discoveryComplete && (matches.length === 1 || explicit.length === 1)) target = matches.length === 1 ? matches[0] : explicit[0];
         }
       }
       const found = target?.getTarget(label);
-      // Like MyST, implicit heading targets need an explicit page.
-      if (!target || !found || (node._unqualified && (found.node as Node).implicit)) return;
+      if (!target || !found) return;
       node.identifier = label;
       resolveReferencesTransform({ type: 'root', children: [node] }, vfile, { state: target });
       if (node.resolved) {
