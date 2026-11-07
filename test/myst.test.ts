@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { fixture } from './helpers';
 import { extendMystMarkdown } from '../src/myst';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
@@ -373,8 +375,12 @@ test('cross-file links, shorthand and document links follow the MyST cross-refer
   assert.deepEqual(link('[Equation %s](#oth-eq)'), ['other.md#oth-eq', 'Equation 1']);
   assert.deepEqual(link('@oth-sec.'), ['other.md#other-section', 'Other Section']);
   assert.deepEqual(link('@oth-eq'), ['other.md#oth-eq', '(1)']);
-  // Implicit heading targets need an explicit page, and citations keep priority.
-  assert.deepEqual(link('[](#plain-heading)'), ['#plain-heading', '#plain-heading']);
+  // As in the project index, a unique implicit heading resolves; citations keep priority.
+  assert.deepEqual(link('[](#plain-heading)'), ['other.md#plain-heading', 'Plain Heading']);
+  assert.deepEqual(link('[](#unknown-label)'), ['#unknown-label', '#unknown-label']);
+  await fs.writeFile(path.join(f.root, 'labeled.md'), '(plain-heading)=\nLabeled paragraph.\n');
+  await f.vault.refresh();
+  assert.equal(link('[](#plain-heading)')[0], 'labeled.md#plain-heading', 'Explicit labels win over heading slugs');
   const cited = dom(f.render('---\nbibliography: refs.bib\n---\n@smith2020 and @oth-fig'));
   assert.equal(cited.querySelector('.myst-citation')?.textContent, 'Smith, 2020');
   assert.equal(cited.querySelector('a[href="other.md#oth-fig"]')?.textContent?.replace(/\s+/g, ' '), 'Figure 1');
