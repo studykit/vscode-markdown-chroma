@@ -289,8 +289,8 @@ export async function run(): Promise<void> {
   console.log('PASS: actual VS Code renderer resolves MyST reference names, numbers, formatting and all anchors');
   const refScratch = await fs.mkdtemp(path.join(mystRoot, 'ref-navigation-'));
   try {
-    const localSource = '(ny2027-section-7)=\n## 공통 수단\n\n{ref}`두 시나리오에 공통인 기능별 수단 <ny2027-section-7>`에서 조치를 찾고, {ref}`코드 근거 <example-target-section-8>`\n\n[명시한 파일](Target%20doc.md#example-target-section-8)\n\nalpha.name / beta.name\n\nhttps://example.com';
-    const targetSource = '(example-target-section-8)=\n## 코드 근거\n';
+    const localSource = '(ny2027-section-7)=\n## 공통 수단\n\n{ref}`두 시나리오에 공통인 기능별 수단 <ny2027-section-7>`에서 조치를 찾고, {ref}`코드 근거 <example-target-section-8>`\n\n[명시한 파일](Target%20doc.md#example-target-section-8)\n\n@sample-figure, [](Target%20doc.md) and {doc}`Target doc`\n\nalpha.name / beta.name\n\nhttps://example.com';
+    const targetSource = '---\ntitle: 대상 문서\n---\n\n(example-target-section-8)=\n## 코드 근거\n\n```{figure} missing.png\n:label: sample-figure\nSample\n```\n';
     await fs.writeFile(path.join(refScratch, 'source.md'), localSource);
     await fs.writeFile(path.join(refScratch, 'Target doc.md'), targetSource);
     const unrelated = path.join(refScratch, 'unrelated');
@@ -310,11 +310,14 @@ export async function run(): Promise<void> {
     assert.equal(rendered.querySelector('.myst-unresolved'), null);
     const target = new JSDOM((await vscode.commands.executeCommand<string>('markdown.api.render', targetDocument))!).window.document;
     assert.ok(target.getElementById('example-target-section-8'));
-    assert.equal(target.querySelector('h2#example-target-section-8.code-line')?.getAttribute('data-line'), '1');
+    assert.equal(target.querySelector('h2#example-target-section-8.code-line')?.getAttribute('data-line'), '5');
+    assert.equal(rendered.querySelector('a[href="Target%20doc.md#sample-figure"]')?.textContent?.replace(/\s+/g, ' '), 'Figure 1');
+    assert.deepEqual([...rendered.querySelectorAll('a[href="Target%20doc.md"]')].map(link => link.textContent), ['대상 문서', '대상 문서']);
+    assert.equal(target.querySelector('figure#sample-figure.code-line')?.getAttribute('data-line'), '7');
     assert.ok(target.getElementById(encodeURIComponent('코드-근거'))?.classList.contains('code-line'));
     assert.ok([...rendered.querySelectorAll('p')].some(node => node.textContent === 'alpha.name / beta.name' && !node.querySelector('a')));
     assert.ok(rendered.querySelector('a[href="https://example.com"]'));
-    console.log('PASS: native preview resolves local/external Korean ref links beyond 100 files/4 MiB of unrelated Markdown and leaves dotted names as prose');
+    console.log('PASS: native preview resolves local/external Korean ref links, @label shorthand, document titles and figure targets beyond 100 files/4 MiB of unrelated Markdown and leaves dotted names as prose');
   } finally { await fs.rm(refScratch, { recursive: true, force: true }); }
   const previewScratch = await fs.mkdtemp(path.join(mystRoot, 'preview-root-'));
   const sharedName = `${path.basename(previewScratch)}-shared.md`;

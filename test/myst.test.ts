@@ -352,3 +352,39 @@ test('MyST footnotes link to every reference in reference order without tooltips
   assert.equal(new Set(links.map(link => link.getAttribute('href'))).size, 3);
   for (const link of links) assert.ok(doc.getElementById(link.getAttribute('href')!.slice(1)));
 });
+
+test('cross-file links, shorthand and document links follow the MyST cross-reference guide', async t => {
+  const target = '---\ntitle: Other Title\n---\n\n(oth-sec)=\n## Other Section\n\n```{figure} x.png\n:label: oth-fig\nCap\n```\n\n```{math}\n:label: oth-eq\nx=1\n```\n\n## Plain Heading\n';
+  const f = await fixture(t, {
+    'Main.md': '', 'other.md': target, 'sub/deep.md': '# Deep doc\n', 'sub/untitled.md': 'Text\n',
+    'refs.bib': '@article{smith2020, author={Smith, J}, title={T}, year={2020}}',
+  });
+  extendMystMarkdown(f.md, f.host);
+  const link = (source: string) => { const a = dom(f.render(source)).querySelector('a'); return [a?.getAttribute('href'), a?.textContent?.replace(/\s+/g, ' ')]; };
+  assert.deepEqual(link('[](./other.md)'), ['other.md', 'Other Title']);
+  assert.deepEqual(link('{doc}`other`'), ['other.md', 'Other Title']);
+  assert.deepEqual(link('[](sub/deep.md)'), ['sub/deep.md', 'Deep doc']);
+  assert.deepEqual(link('[](sub/untitled.md)'), ['sub/untitled.md', 'untitled']);
+  assert.deepEqual(link('[text](./other.md)'), ['other.md', 'text']);
+  assert.deepEqual(link('{download}`other.md`'), ['other.md', 'other.md']);
+  assert.deepEqual(link('[](./other.md#oth-fig)'), ['other.md#oth-fig', 'Figure 1']);
+  assert.deepEqual(link('[](./other.md#plain-heading)'), ['other.md#plain-heading', 'Plain Heading']);
+  assert.deepEqual(link('[](#oth-fig)'), ['other.md#oth-fig', 'Figure 1']);
+  assert.deepEqual(link('[Equation %s](#oth-eq)'), ['other.md#oth-eq', 'Equation 1']);
+  assert.deepEqual(link('@oth-sec.'), ['other.md#other-section', 'Other Section']);
+  assert.deepEqual(link('@oth-eq'), ['other.md#oth-eq', '(1)']);
+  // Implicit heading targets need an explicit page, and citations keep priority.
+  assert.deepEqual(link('[](#plain-heading)'), ['#plain-heading', '#plain-heading']);
+  const cited = dom(f.render('---\nbibliography: refs.bib\n---\n@smith2020 and @oth-fig'));
+  assert.equal(cited.querySelector('.myst-citation')?.textContent, 'Smith, 2020');
+  assert.equal(cited.querySelector('a[href="other.md#oth-fig"]')?.textContent?.replace(/\s+/g, ' '), 'Figure 1');
+  // VS Code scrolls to a cross-document fragment through code-line elements.
+  const destination = dom(f.render(target, 'other.md'));
+  for (const id of ['oth-fig', 'oth-eq']) {
+    const element = destination.getElementById(id);
+    assert.ok(element?.classList.contains('code-line'), id);
+    assert.ok(element?.getAttribute('data-line'), id);
+  }
+  const included = dom(f.render(':::{include} other.md\n:::'));
+  assert.equal(included.querySelector('#oth-fig.code-line, #oth-eq[data-line]'), null);
+});
