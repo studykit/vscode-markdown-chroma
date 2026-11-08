@@ -1,7 +1,7 @@
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { GenericNode, MystPlugin } from 'myst-common';
+import type { GenericNode, MystPlugin } from 'myst-common' with { 'resolution-mode': 'import' };
 import {
   documentNodes, findFolderTerm, FOLDER_GLOSSARY_CONFIG, matchFolderGlossary, parseFolderGlossaryConfig,
 } from './folder-glossary';

@@ -1,15 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
-- Share preview syntax with CLI/API/MCP indexing and expansion: visible heading titles, Obsidian comments, highlights, and footnotes stay consistent. Source reads still return the original saved Markdown.
+- Organize a MyST glossary as one Markdown file per term. Preview, CLI, API, and MCP resolve canonical names and aliases, and the new MyST book transform generates term links and subject index entries.
+- Preview standalone term definitions and index definitions from supported project directive mappings.
+- Resolve cross-file MyST section and figure references, including shorthand labels and document links. Explicit labels take precedence over implicit heading targets.
+- Share Markdown syntax across Preview, CLI, API, and MCP so visible headings, Obsidian comments, highlights, and footnotes stay consistent. Source reads still return the original saved Markdown.
 - Resolve file-local Obsidian block IDs in backlinks and explicit embeds, report duplicate IDs as ambiguous, and rebuild older indexes automatically.
 - Preserve prose after Obsidian comments and serialize dropdown summaries, chemistry roles, and supported inline formatting in directive expansion.
-
 - Use one MyST parser with Obsidian syntax for all previews, including project-plugin bodies. Highlights, callouts, tags, and inline footnotes compose with MyST directives and roles.
 - Apply MyST math, definition lists, and comments without requiring a project or another MyST construct, and preserve straight quotes.
 - Keep footnote return links inside the final paragraph, including multiple references.
 - Render code line numbers and emphasis with native syntax highlighting, table/code captions above their content, heading contents lists, dropdowns, and chemical formula subscripts.
+- Avoid duplicate Mermaid diagrams when VS Code already supplies a Mermaid renderer.
 
 ## 0.1.2
 
