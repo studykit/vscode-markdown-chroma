@@ -168,6 +168,11 @@ markdown-chroma read-term '채팅방' --root ./notes --json
 
 The review filter matches terms with the selected state. Ordinary directive terms have no review state. Reads by name or ID continue to work for unreviewed terms.
 
+### Use folder terms in a MyST book
+
+The npm package includes the MyST build transform and its
+[setup guide](MYST-FOLDER-GLOSSARY.md), with complete project files and verification commands.
+
 ### Read whole glossaries
 
 Use a glossary to keep shared definitions together and refer to them from multiple documents with MyST `{term}`. Reading one term is useful for a specific definition; reading the whole glossary gives the context of related terms. List glossaries, then select one by its owning section title:

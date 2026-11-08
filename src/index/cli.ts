@@ -43,6 +43,9 @@ Diagnostics go to stderr; partial results exit 1. Invalid arguments exit 2.
 Requires Node >=20. Source/config/bibliography limit: 2 MiB per file.
 Hidden paths, node_modules, _build and symlinks are excluded; .obsidian is unused.
 
+Find the packaged MyST book glossary guide from the directory that installed Chroma.
+  node -p "require.resolve('markdown-chroma/docs/myst-folder-glossary.md')"
+
 Examples:
   markdown-chroma index --root ./notes
   markdown-chroma sections guide.md --root ./notes
