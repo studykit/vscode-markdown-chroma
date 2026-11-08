@@ -60,6 +60,10 @@ See equation {eq}`energy`.
 
 See the [MyST authoring guide](https://mystmd.org/guide) for the syntax.
 
+Use one Markdown file per term and share the definitions between Chroma and a MyST book.
+The [file-based glossary setup guide](docs/MYST-FOLDER-GLOSSARY.md) ships in the npm package
+and covers configuration, term links, and the book index.
+
 Projects can also enable local JavaScript directive and role plugins in a trusted workspace. See [project plugin setup and limits](https://github.com/studykit/vscode-markdown-chroma/blob/main/docs/PREVIEW.md#project-defined-myst-plugins).
 
 ## Make the preview yours

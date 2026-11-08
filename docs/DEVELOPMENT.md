@@ -42,7 +42,7 @@ npm install -g ./markdown-chroma-0.1.2.tgz
 
 `npm pack` invokes the build through `prepack`. Generated bundles, archives, and VSIX files are ignored by Git.
 
-The npm package contains both CLI executables and the `markdown-chroma/index` API. Verify the packed archive in an isolated consumer project, including CLI commands, MCP calls and API declarations. Keep version numbers, archive names and pinned `npx` examples aligned.
+The npm package contains both CLI executables, the `markdown-chroma/index` API, and the `markdown-chroma/myst-folder-glossary` build transform. Verify the packed archive in an isolated consumer project, including CLI commands, MCP calls and API declarations. Keep version numbers, archive names and pinned `npx` examples aligned.
 
 ## Runtime verification
 
@@ -77,7 +77,7 @@ Choose verification according to the change:
 | Persistent indexing, parsing, static plugin inspection, source reads, records, shared queries, batch reads, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/plugins.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/batch.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
 | CLI entry point and argument handling | `src/cli.ts`, `src/index/cli.ts` |
 | Explicit saved-source directive/include/embed expansion, selection and readable output | `src/index/expansion.ts`, `src/index/expansion-source.ts`, `src/preview-plugins/expansion-parser.ts` |
-| Public Node API exports | `src/index/index.ts` |
+| Public Node API exports and MyST book transform | `src/index/index.ts`, `src/myst-folder-glossary.ts` |
 | MCP entry point, transport selection, stdio / HTTP lifecycle, and tools | `src/mcp.ts`, `src/mcp/cli.ts`, `src/mcp/stdio.ts`, `src/mcp/http.ts`, `src/mcp/server.ts` |
 | VS Code MCP server definitions | `src/mcp-provider.ts` |
 | Bundles, assets, notices, and API declarations | `scripts/build.mjs`, `tsconfig.api.json` |

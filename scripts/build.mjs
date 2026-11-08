@@ -22,6 +22,7 @@ const builds = [
   { entryPoints: ['src/mcp.ts'], outfile: 'dist/mcp.cjs' },
   { entryPoints: ['src/cli.ts'], outfile: 'dist/cli.cjs' },
   { entryPoints: ['src/index/index.ts'], outfile: 'dist/index.cjs' },
+  { entryPoints: ['src/myst-folder-glossary.ts'], outfile: 'dist/myst-folder-glossary.cjs' },
   ...tests.map(name => ({ entryPoints: [`test/${name}`], outfile: `dist/test/${name.replace('.ts', '.cjs')}` })),
   { entryPoints: ['test/integration.ts'], outfile: 'dist/integration.cjs' }
 ].map(options => ({

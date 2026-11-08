@@ -7,5 +7,5 @@
     "outDir": "dist/types",
     "rootDir": "src"
   },
-  "include": ["src/index/index.ts", "src/vendor.d.ts"]
+  "include": ["src/index/index.ts", "src/myst-folder-glossary.ts", "src/vendor.d.ts"]
 }

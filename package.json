@@ -46,7 +46,12 @@
     "./index": {
       "types": "./dist/types/index/index.d.ts",
       "default": "./dist/index.cjs"
-    }
+    },
+    "./myst-folder-glossary": {
+      "types": "./dist/types/myst-folder-glossary.d.ts",
+      "default": "./dist/myst-folder-glossary.cjs"
+    },
+    "./docs/myst-folder-glossary.md": "./docs/MYST-FOLDER-GLOSSARY.md"
   },
   "files": [
     "dist/extension.cjs",
@@ -54,6 +59,7 @@
     "dist/preview-plugin-loader.cjs",
     "dist/cli.cjs",
     "dist/index.cjs",
+    "dist/myst-folder-glossary.cjs",
     "dist/mcp.cjs",
     "dist/preview.js",
     "dist/THIRD_PARTY_NOTICES.txt",
@@ -62,6 +68,7 @@
     "media/icon.png",
     "docs/images",
     "docs/CLI.md",
+    "docs/MYST-FOLDER-GLOSSARY.md",
     "docs/PREVIEW.md",
     "docs/CLI-INDEX-SPEC.md",
     "README.md",
