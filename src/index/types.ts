@@ -1,6 +1,6 @@
 /** Persisted records contain structure and references, never the document body. */
 export const SCHEMA_VERSION = 1;
-export const PARSER_VERSION = 'myst-parser@1.7.4/chroma-index@5';
+export const PARSER_VERSION = 'myst-parser@1.7.4/chroma-index@7';
 export interface Diagnostic { code: string; message: string; file?: string; line?: number; severity: 'warning' | 'error' }
 export interface Range { startLine: number; endLine: number }
 export interface Section extends Range {
@@ -18,12 +18,14 @@ export interface Image extends ContentItem {
   figure: { id: string; labels: string[]; caption: string | null } | null;
 }
 export interface Glossary extends ContentItem { localId: string; name: string | null; termCount: number }
-export interface Term extends ContentItem { localId: string; identifier: string; name: string; aliases: string[]; glossaryId: string }
+export interface Term extends ContentItem {
+  localId: string; identifier: string; name: string; aliases: string[]; ko?: string; formerly?: string[]; reviewed?: boolean; glossaryId: string | null;
+}
 export type ReadSelection = { kind: 'section'; file: string; title?: string; headingPath?: string[]; id?: string;
   label?: string; line?: number; includeChildren?: boolean; sourceHash?: string }
   | { kind: 'term'; name: string; file?: string; sourceHash?: string };
 export type SelectionInfo = { kind: 'section'; file: string; title: string; headingPath: string[] }
-  | { kind: 'term'; file: string; name: string };
+  | { kind: 'term'; file: string; name: string; reviewed?: boolean };
 export type BatchReadItem = (SelectionInfo & Range & { sourceHash: string; covers?: SelectionInfo[] } &
   ({ status: 'ok'; content: string } | { status: 'omitted'; reason: 'budget'; requiredChars: number }))
   | { status: 'error'; selector: ReadSelection; error: ReturnType<typeof errorRecord> };

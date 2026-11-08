@@ -9,6 +9,7 @@ import { crossReferenceSource, assertCrossReferences } from './cross-references'
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 import { verifyPreviewPlugins } from './preview-plugins-integration';
 import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
+import { termDefSource, assertTermDefPreview } from './term-def';
 import { unifiedPreviewSource, assertUnifiedPreview } from './unified-preview';
 import { obsidianBlockSource, assertObsidianBlocks } from './obsidian-blocks';
 
@@ -400,6 +401,20 @@ export async function run(): Promise<void> {
   const glossaryHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', glossaryInput))!;
   assertGlossaryLineBreaks(new JSDOM(glossaryHtml).window.document);
   console.log('PASS: native preview renders canonical glossary terms, aliases and alias references while preserving ordinary prose formatting');
+  const termDefInput = { uri: vscode.Uri.file(path.join(mystRoot, 'term-def.md')), version: -1, getText: () => termDefSource };
+  const termDefHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', termDefInput))!;
+  assertTermDefPreview(new JSDOM(termDefHtml).window.document, vscode.env.language);
+  console.log('PASS: native preview renders standalone term definitions, folded information, and term references');
+  const folderGlossary = vscode.workspace.workspaceFolders!.find(folder => folder.name === 'folder-glossary')!.uri.fsPath;
+  const folderReference = await vscode.workspace.openTextDocument(path.join(folderGlossary, 'Reference.md'));
+  const folderDefinition = await vscode.workspace.openTextDocument(path.join(folderGlossary, 'Glossary', 'chat.md'));
+  await vscode.commands.executeCommand('obsidianMarkdown.refreshVault');
+  const folderLink = new JSDOM(await vscode.commands.executeCommand<string>('markdown.api.render', folderReference)).window.document.querySelector('a');
+  assert.equal(folderLink?.getAttribute('href'), 'Glossary/chat.md#definition');
+  assert.equal(folderLink.textContent?.trim(), '채팅방');
+  const folderHeading = new JSDOM(await vscode.commands.executeCommand<string>('markdown.api.render', folderDefinition)).window.document.querySelector('h2#definition.code-line');
+  assert.equal(folderHeading?.getAttribute('data-line'), '7');
+  console.log('PASS: native preview opens folder glossary aliases at their Markdown definition heading');
   for (const name of ['index', 'layout', 'syntax']) {
     const doc = await vscode.workspace.openTextDocument(path.join(mystRoot, `${name}.md`));
     const html = (await vscode.commands.executeCommand<string>('markdown.api.render', doc))!;

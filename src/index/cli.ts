@@ -20,7 +20,7 @@ Usage: markdown-chroma <command> [file or term names] [options]
   tables [file]              List tables [--section section-id with file]
   images [file]              List image occurrences [--section section-id with file]
   glossaries [file]          List glossary directives across the root or one file
-  terms [file]              List definitions [--glossary id] [--name exact-name]
+  terms [file]              List definitions [--glossary id] [--name exact-name] [--reviewed true|false]
   read-term <name...>        Read definitions, optionally limited by --file
   read-term --id <id>...     Read selected definitions by global IDs
   read-glossary <file>       Read a glossary by its owning --title or --heading-path
@@ -62,7 +62,7 @@ const commands: Record<string, string[]> = {
   'read-frontmatter': ['source-hash'],
   'read-lines': ['start', 'end', 'source-hash'],
   backlinks: ['term'], sections: [], 'read-section': ['id', 'label', 'title', 'heading-path', 'line', 'no-children', 'source-hash'],
-  tables: ['section'], images: ['section'], glossaries: [], terms: ['glossary', 'name'],
+  tables: ['section'], images: ['section'], glossaries: [], terms: ['glossary', 'name', 'reviewed'],
   'read-term': ['id', 'file', 'source-hash'], 'read-glossary': ['id', 'title', 'heading-path'], read: ['id', 'select', 'max-chars'],
 };
 const flags = new Set(['help', 'json', 'debug', 'rebuild', 'unresolved', 'exact-tag', 'no-children', 'allow-project-plugins']);
@@ -132,6 +132,9 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
       } else if (['line', 'start', 'end', 'max-chars', 'max-depth'].includes(name)) {
         if (!/^\d+$/.test(list[0])) throw new IndexError('invalidArguments', `--${name} requires an integer.`);
         queryArguments[key] = Number(list[0]);
+      } else if (name === 'reviewed') {
+        if (list[0] !== 'true' && list[0] !== 'false') throw new IndexError('invalidArguments', '--reviewed requires true or false.');
+        queryArguments[key] = list[0] === 'true';
       } else queryArguments[key] = repeated.has(name) && key !== 'id' ? list : flags.has(name) ? true : list[0];
     }
     if (has('where')) queryArguments.where = where;
@@ -146,6 +149,8 @@ export async function runCli(argv: string[], io: CliIO = defaultIO): Promise<num
     else if (has('json')) io.stdout(JSON.stringify(presentResult(result, query)) + '\n');
     else {
       if ('items' in result) for (const item of result.items) if (item.status === 'error') io.stderr(formatCliError(item.error));
+      if ('items' in result) for (const item of result.items) if (item.status === 'ok' && 'reviewed' in item && item.reviewed === false)
+        io.stderr(`${item.file}: Term definition is unreviewed.\n`);
       if ('budget' in result) for (const item of result.items) if (item.status === 'omitted')
         io.stderr(`${item.file}: ${'title' in item ? item.title : item.name}: Omitted within the read budget; needs ${item.requiredChars} characters. Request it separately or increase --max-chars.\n`);
       io.stdout(formatCliResult(result));

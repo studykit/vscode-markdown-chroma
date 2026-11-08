@@ -81,6 +81,8 @@ export async function activate(context: vscode.ExtensionContext) {
     refreshPreviews();
   };
   const host: PreviewHost = {
+    language: vscode.env.language,
+    folderGlossaryHeading: file => forSource(file)?.folderGlossaryHeading(file),
     referenceFiles: (identifier, source) => forSource(source)?.referenceFiles(identifier, source) ?? [],
     markdownFiles: source => forSource(source)?.markdownFiles(source) ?? [],
     parseMystPlugins: (source, file, project) => plugins.parse(source, file, rootFor(file), project,

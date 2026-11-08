@@ -1,12 +1,14 @@
 import { defaultOptions } from 'myst-parser';
 import { parseMarkdown } from '../markdown-parser';
-import { previewMystOptions } from '../myst-options';
+import { configuredTermDirectives, previewMystOptions } from '../myst-options';
+import { termDirectiveDeclarations } from '../myst-config';
 import { occurrences } from '../index/expansion-source';
 
 /** Parse only the caller-selected source. Gate callbacks before nested parsing. */
 export function parseExpansion(source: string, vfile: any, directives: any[], roles: any[], settings: any, maxDepth: number, depth = 0): any {
   const items = occurrences(source);
-  const known = new Set([...defaultOptions.directives, ...previewMystOptions.directives, ...directives].flatMap(spec => [spec.name, ...(typeof spec.alias === 'string' ? [spec.alias] : spec.alias ?? [])]));
+  const configured = configuredTermDirectives(termDirectiveDeclarations(settings), directives);
+  const known = new Set([...defaultOptions.directives, ...previewMystOptions.directives, ...directives, ...configured].flatMap(spec => [spec.name, ...(typeof spec.alias === 'string' ? [spec.alias] : spec.alias ?? [])]));
   const unknown = [...new Set(items.filter(item => !known.has(item.name) && item.name !== 'obsidian-embed').map(item => item.name))].map(name => ({
     name, arg: { type: 'string' }, body: { type: 'string' }, options: Object.fromEntries(items.filter(item => item.name === name).flatMap(item => Object.keys(item.node.options ?? {})).map(key => [key, { type: 'string' }])),
     run(data: any, file: any) { file.message(`Directive ${name} could not be expanded; original syntax retained.`); return [{ type: 'expansionSource', value: items.find(item => item.name === name && item.startLine === data.node.position.start.line)?.source ?? '' }]; },
@@ -39,7 +41,7 @@ export function parseExpansion(source: string, vfile: any, directives: any[], ro
     },
   });
   const tree = parseMarkdown(source, { ...previewMystOptions, vfile,
-    directives: [...previewMystOptions.directives, ...directives.map(spec => wrap(spec, 'directive')), ...unknown],
+    directives: [...previewMystOptions.directives, ...directives.map(spec => wrap(spec, 'directive')), ...configured, ...unknown],
     roles: [...previewMystOptions.roles, ...roles.map(spec => wrap(spec, 'role'))],
     extensions: { ...previewMystOptions.extensions, math: settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true },
   }).tree;

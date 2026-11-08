@@ -5,10 +5,12 @@ import { parseMarkdown, tokenizeMarkdown } from '../markdown-parser';
 import { normalizeLabel } from 'myst-common';
 import { glossaryTransform } from 'myst-transforms';
 import { VFile } from 'vfile';
-import { previewMystOptions } from '../myst-options';
+import { configuredTermDirectives, previewMystOptions } from '../myst-options';
 import { plainText } from '../references';
 import { parseFrontmatter } from '../frontmatter';
+import { termDirectiveDeclarations } from '../myst-config';
 import { glossaryIdentifier, normalizeGlossaries } from '../glossary';
+import { documentNodes, findFolderTerm, type FolderGlossaryMatch } from '../folder-glossary';
 import type { PluginNames } from './plugins';
 import { globalId, normalizeTag, type ContentItem, type DocumentIndex, type Reference, type Section, type Table, type Target } from './types';
 
@@ -28,13 +30,6 @@ export const hash = (value: string | Buffer) => `sha256:${createHash('sha256').u
 export const termIdentifier = glossaryIdentifier;
 const labelIdentifier = (name: string) => normalizeLabel(name)?.identifier ?? name;
 function all(node: Node, type: string): Node[] { return [...(node.type === type ? [node] : []), ...(node.children?.flatMap(child => all(child, type)) ?? [])]; }
-/** MyST +++ blocks contain document-level headings; directive and quote headings remain local. */
-function* documentNodes(node: Node): Generator<Node> {
-  for (const child of node.children ?? []) {
-    yield child;
-    if (child.type === 'block') yield* documentNodes(child);
-  }
-}
 function range(node: Node, fallback = { startLine: 1, endLine: 1 }) {
   return { startLine: node.position?.start.line ?? fallback.startLine, endLine: Math.max(node.position?.start.line ?? fallback.startLine, node.position?.end.line ?? fallback.endLine) };
 }
@@ -58,7 +53,7 @@ function linkLiteral(value: string): string {
   return value.slice(0, end);
 }
 
-export function parseIndex(file: string, source: string, settings: Record<string, any> = {}, plugins?: PluginNames): DocumentIndex {
+export function parseIndex(file: string, source: string, settings: Record<string, any> = {}, plugins?: PluginNames, glossary: FolderGlossaryMatch = {}): DocumentIndex {
   const frontmatter = parseFrontmatter(source);
   const lines = source.split('\n');
   const lastLine = lines.length - (source.endsWith('\n') ? 1 : 0);
@@ -69,9 +64,15 @@ export function parseIndex(file: string, source: string, settings: Record<string
     tags: [], sections: [], tables: [], images: [], glossaries: [], terms: [], targets: [], outgoing: [], diagnostics: [], bibliographyKeys: [] };
   if (frontmatter?.error) document.diagnostics.push({ code: 'invalidFrontmatter', message: frontmatter.error, file, line: 1, severity: 'error' });
   const vfile = new VFile({ path: file });
-  const options = { markdownit: { linkify: false }, directives, roles: previewMystOptions.roles, extensions: { frontmatter: false, strikethrough: true,
+  const configured = configuredTermDirectives(termDirectiveDeclarations(settings.settings));
+  const configuredNames = new Set(configured.map(spec => spec.name));
+  const options = { markdownit: { linkify: false }, directives: [...directives, ...configured], roles: previewMystOptions.roles, extensions: { frontmatter: false, strikethrough: true,
     math: settings.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile };
   const tree = parseMarkdown(body, options).tree as Node;
+  const folder = glossary.heading ? findFolderTerm(tree, file, glossary.heading, frontmatter) : {};
+  const folderTerm = folder.term;
+  const glossaryError = glossary.error ?? folder.error;
+  if (glossaryError) document.diagnostics.push({ code: 'folderGlossary', file, line: folderTerm?.headingLine, severity: 'warning', message: glossaryError });
   normalizeGlossaries(tree, body, source => parseMarkdown(source, options).tree as Node, vfile);
   glossaryTransform(tree, vfile);
   const processedDirectives = new Map(all(tree, 'mystDirective').map(node => [`${node.position?.start.line}:${node.name}`, node]));
@@ -93,13 +94,14 @@ export function parseIndex(file: string, source: string, settings: Record<string
     document.diagnostics.push({ code: 'mystSyntax', file, line: message.line ?? undefined, message: message.message, severity: message.fatal ? 'error' : 'warning' });
   }
   for (const [type, registered] of [['mystDirective', pluginDirectives], ['mystRole', pluginRoles]] as const)
-    for (const node of all(raw, type)) if (registered.has(node.name)) document.diagnostics.push({ code: 'pluginContentNotIndexed', file,
+    for (const node of all(raw, type)) if (registered.has(node.name) && (type !== 'mystDirective' || !configuredNames.has(node.name))) document.diagnostics.push({ code: 'pluginContentNotIndexed', file,
       line: node.position?.start.line, severity: 'warning', message: `Project plugin ${type === 'mystDirective' ? 'directive' : 'role'} "${node.name}" is declared, but its generated content is not indexed.` });
   if (plugins?.transforms || plugins?.unavailable) document.diagnostics.push({ code: 'pluginContentNotIndexed', file, severity: 'warning',
     message: 'Project plugin transforms or uninspected definitions may change document content. Plugins are not executed while indexing.' });
   document.diagnostics = document.diagnostics.filter((d, i, a) => a.findIndex(v => v.code === d.code && v.line === d.line && v.message === d.message) === i);
   const slugger = new GithubSlugger(); slugger.slug('preamble');
   let pending: Node[] = [];
+  let folderSection: Section | undefined;
   for (const node of documentNodes(raw)) {
     if (node.type === 'mystTarget') { pending.push(node); continue; }
     if (node.type === 'heading') {
@@ -108,6 +110,7 @@ export function parseIndex(file: string, source: string, settings: Record<string
       const section: Section = { id: slugger.slug(title) || slugger.slug('section'), title, level: node.depth,
         headingPath: [], labels: pending.map(n => n.label), startLine: start, endLine: lastLine, ownEndLine: lastLine };
       document.sections.push(section);
+      if (folderTerm && node.position?.start.line === folderTerm.headingLine) folderSection = section;
     }
     pending = [];
   }
@@ -125,6 +128,12 @@ export function parseIndex(file: string, source: string, settings: Record<string
     section.endLine = nextPeer ? nextPeer.startLine - 1 : lastLine;
     section.ownEndLine = sections[i + 1] ? sections[i + 1].startLine - 1 : lastLine;
   });
+  if (folderTerm && folderSection) {
+    const { name, identifier, aliases, reviewed } = folderTerm;
+    const { id: localId, startLine, endLine, headingPath, labels } = folderSection;
+    document.terms.push({ id: globalId(file, localId), file, localId, identifier, name, aliases, reviewed,
+      glossaryId: null, sectionId: localId, headingPath, labels, startLine, endLine, sourceHash: document.sourceHash });
+  }
   const belonging = (line: number) => document.sections.filter(s => s.startLine <= line && s.endLine >= line).at(-1);
   const common = (node: Node, id: string, inherited?: ReturnType<typeof range>): ContentItem => {
     const bounds = range(node, inherited); const section = belonging(bounds.startLine);
@@ -167,6 +176,7 @@ export function parseIndex(file: string, source: string, settings: Record<string
   const figureInfo = (node: Node) => ({ id: `figure-${range(node).startLine}`, labels: [...new Set([...labelValues(node), ...document.targets.filter(t => t.nodeStartLine === range(node).startLine).map(t => t.label)])],
     caption: node.value ? text({ type: 'root', children: (node.children?.[0]?.children ?? []).filter((c: Node) => c.type !== 'image' && c.type !== 'table' && !all(c, 'image').length && !all(c, 'table').length) }).trim() || null : null });
   const termSlugs = new GithubSlugger();
+  const termSlug = (name: string) => termSlugs.slug(`term-${name}`) || termSlugs.slug('term');
   const tableDeclarations: Node[] = [];
   const rawWalk = (node: Node, inherited?: ReturnType<typeof range>, figure: ReturnType<typeof figureInfo> | null = null) => {
     const bounds = range(node, inherited);
@@ -212,6 +222,13 @@ export function parseIndex(file: string, source: string, settings: Record<string
         const [target, ...fragment] = String(node.args ?? '').trim().split('#');
         addReference(node, node.name === 'embed' ? 'embed' : 'include', target, fragment.length ? fragment.join('#') : null);
       }
+      const standalone = processed?.children?.[0]?.children?.[0];
+      if (standalone?.type === 'definitionTerm' && standalone.standaloneTerm && standalone.identifier !== folderTerm?.identifier) {
+        const name = standalone.label, localId = termSlug(name);
+        document.terms.push({ ...common(node, globalId(file, localId)), localId, identifier: standalone.identifier, name,
+          aliases: standalone.aliases, ...(standalone.ko ? { ko: standalone.ko } : {}),
+          ...(standalone.formerly.length ? { formerly: standalone.formerly } : {}), glossaryId: null });
+      }
       if (node.name === 'glossary') {
         const localId = `glossary-${document.glossaries.length + 1}`;
         const item = { ...common(node, globalId(file, localId)), localId, name: node.args || null, termCount: 0 };
@@ -227,7 +244,8 @@ export function parseIndex(file: string, source: string, settings: Record<string
             if (!descriptions.length) continue;
             const parsedTerm = processedTerms.get(range(term).startLine);
             const name = parsedTerm?.label ?? text(term).trim(); const identifier = parsedTerm?.identifier ?? termIdentifier(name);
-            const id = termSlugs.slug(`term-${name}`) || termSlugs.slug('term');
+            if (identifier === folderTerm?.identifier) continue;
+            const id = termSlug(name);
             const next = children.slice(firstDescription).find(n => n.type === 'definitionTerm');
             let endLine = Math.min(next ? range(next).startLine - 1 : bounds.endLine - 1, Math.max(...descriptions.map(n => range(n).endLine)));
             while (endLine > range(term).startLine && !lines[endLine - 1]?.trim()) endLine--;
@@ -242,7 +260,7 @@ export function parseIndex(file: string, source: string, settings: Record<string
           syntax: `myst-${node.name}`, source: image.url, alt: image.alt ?? '', figure });
       }
       if (!layout.has(node.name)) for (const label of labelValues(node)) addTarget(label, node.name, null, bounds);
-      if (directiveBodies.get(node.name) !== 'myst') return;
+      if (directiveBodies.get(node.name) !== 'myst' && !configuredNames.has(node.name)) return;
       for (const child of node.children ?? []) if (child.type === 'mystDirectiveBody') child.children?.forEach(n => rawWalk(n, bounds, figure));
       return;
     }
@@ -283,6 +301,7 @@ export function parseIndex(file: string, source: string, settings: Record<string
     node.children?.forEach(child => semanticWalk(child, bounds, containedTable));
   };
   semanticWalk(tree);
+  if (folderTerm) document.terms.sort((left, right) => left.startLine - right.startLine);
   // Some declared external tables are unsupported by this parser version. Keep their declaration and diagnostics.
   for (const node of tableDeclarations) {
     if (['table', 'list-table', 'csv-table'].includes(node.name) && !document.tables.some(item => item.startLine === range(node).startLine)) {

@@ -143,7 +143,32 @@ markdown-chroma read-term 'Directive' --root ./notes
 markdown-chroma read-term 'Directive' --file glossary.md --root ./notes
 ```
 
-For [indented definitions with multiple names](PREVIEW.md#glossary-aliases), the first name is canonical and later names are aliases. `terms` lists one item per definition with its aliases; `terms --name`, `read-term`, and term selections in `read --select` accept either the canonical name or an alias. All names read the same original source and share `{term}` backlinks. Duplicate names across definitions return ambiguity candidates; narrow by file or select a listed ID.
+For [indented definitions with multiple names](PREVIEW.md#glossary-aliases), the first name is canonical and later names are aliases. [Standalone definitions](PREVIEW.md#standalone-term-definitions) can also declare a Korean name and former names. `terms --name`, `read-term`, and term selections in `read --select` accept all of these names. They read the same original source and share `{term}` backlinks. Duplicate names across definitions return ambiguity candidates. Narrow by file or select a listed ID.
+
+### Folder glossaries
+
+Place `chroma.index.yml` at the index root to define a glossary made of ordinary Markdown files.
+
+```yaml
+version: 1
+glossaries:
+  - include: "Glossary/*.md"
+    definitionHeading: Definition
+```
+
+The glob is relative to the root and case-sensitive. Use `**` to include nested folders. Each matched file needs one level-two heading with the configured title, such as `## Definition`. The file stem is the canonical name, and frontmatter `aliases` provides alternate names. The selected section, including its subheadings, is the definition returned by reads. If a matching directive defines the same canonical name in that file, the section supplies the term.
+
+Folder terms appear in `terms` by default, including terms marked `reviewed: false`. Omit the frontmatter field once a folder term is reviewed. JSON listings and reads return the review state. Text reads keep the original Markdown on stdout and report unreviewed terms on stderr.
+
+```sh
+markdown-chroma terms --reviewed false --root ./notes
+markdown-chroma terms --reviewed true --root ./notes
+markdown-chroma read-term '채팅방' --root ./notes --json
+```
+
+The review filter matches terms with the selected state. Ordinary directive terms have no review state. Reads by name or ID continue to work for unreviewed terms.
+
+### Read whole glossaries
 
 Use a glossary to keep shared definitions together and refer to them from multiple documents with MyST `{term}`. Reading one term is useful for a specific definition; reading the whole glossary gives the context of related terms. List glossaries, then select one by its owning section title:
 

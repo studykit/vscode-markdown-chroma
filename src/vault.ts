@@ -3,11 +3,16 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { aliasesFrom } from './frontmatter';
 import { previewReferenceIdentifiers } from './preview-reference-index';
+import { mystConfiguration, termDirectiveDeclarations } from './myst-config';
+import { configuredTermDirectives } from './myst-options';
+import { FOLDER_GLOSSARY_CONFIG, matchFolderGlossary, parseFolderGlossaryConfig } from './folder-glossary';
 import type { Resolution } from './types';
 
 const ignored = new Set(['.git', '.obsidian', 'node_modules']);
 const maxNoteBytes = 2 * 1024 * 1024;
 const key = (value: string) => value.normalize('NFC').toLocaleLowerCase();
+const markdownFile = /\.(?:md|markdown)$/i;
+type TermDeclarations = { value: unknown; signature: string };
 
 export function isWithin(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
@@ -35,6 +40,8 @@ export class FileVault {
   private cached = new Map<string, { signature: string; source: string }>();
   private generation = 0;
   private referenceRecords = new Map<string, { signature: string; identifiers: Set<string> }>();
+  private referenceDeclarations = new Map<string, TermDeclarations>();
+  private folderGlossaryHeadings = new Map<string, string>();
 
   constructor(readonly root: string, private readonly dirtyText: (file: string) => string | undefined = () => undefined) {}
 
@@ -58,8 +65,8 @@ export class FileVault {
         if (!entry.isFile()) continue;
         files.set(key(path.relative(this.root, file).split(path.sep).join('/')), file);
         add(names, entry.name, file);
-        if (path.extname(file).toLowerCase() !== '.md') continue;
-        add(names, entry.name.slice(0, -3), file);
+        if (!markdownFile.test(file)) continue;
+        add(names, path.basename(entry.name, path.extname(entry.name)), file);
         let handle: fs.promises.FileHandle | undefined;
         try {
           // Only the header is needed for alias indexing, even for large notes.
@@ -70,19 +77,51 @@ export class FileVault {
           for (const alias of aliasesFrom(source)) add(aliases, alias, file);
         } catch { /* An unreadable note can still be linked. */ }
         finally { await handle?.close(); }
-        const record = this.referenceRecord(file);
-        if (record) referenceRecords.set(file, record);
-        // A project can contain hundreds of Markdown files. Yield between
-        // documents instead of doing project discovery inside a render budget.
-        await new Promise<void>(resolve => setImmediate(resolve));
       }
     };
     await walk(this.root);
+    const referenceDeclarations = new Map<string, TermDeclarations>();
+    const folderGlossaryHeadings = new Map<string, string>();
+    const glossaryConfigFile = files.get(key(FOLDER_GLOSSARY_CONFIG));
+    const glossaryConfig = parseFolderGlossaryConfig(glossaryConfigFile && path.basename(glossaryConfigFile) === FOLDER_GLOSSARY_CONFIG
+      ? this.read(glossaryConfigFile) : undefined);
+    const hasConfig = [...files.values()].some(file => /^myst\.ya?ml$/i.test(path.basename(file)));
+    for (const file of files.values()) {
+      if (generation !== this.generation) return;
+      if (!markdownFile.test(file)) continue;
+      const directory = path.dirname(file);
+      let declarations = referenceDeclarations.get(directory);
+      if (hasConfig && !declarations) {
+        const config = mystConfiguration({
+          resolve: (target, source) => {
+            if (!source || /[\0\\]/.test(target) || /^[a-z][a-z\d+.-]*:/i.test(target) || path.isAbsolute(target)) return { status: 'outside' };
+            const absolute = path.resolve(path.dirname(source), target);
+            if (!isWithin(this.root, absolute)) return { status: 'outside' };
+            const match = files.get(key(path.relative(this.root, absolute).split(path.sep).join('/')));
+            return match && this.safeFile(match) ? { status: 'found', path: match } : { status: 'missing' };
+          },
+          read: target => this.read(target),
+        }, { currentDocument: { fsPath: file } });
+        const value = termDirectiveDeclarations(config.project.settings);
+        const definitions = configuredTermDirectives(value).map(spec => [spec.name, Object.keys(spec.options ?? {})]);
+        declarations = { value, signature: definitions.length ? JSON.stringify(definitions) : '' };
+        referenceDeclarations.set(directory, declarations);
+      }
+      const relative = path.relative(this.root, file).split(path.sep);
+      const { heading } = relative.includes('_build') ? {} : matchFolderGlossary(glossaryConfig, relative.join('/'));
+      if (heading) folderGlossaryHeadings.set(file, heading);
+      const record = this.referenceRecord(file, declarations ?? null, heading ?? '');
+      if (record) referenceRecords.set(file, record);
+      // Yield between documents so lookup on demand only reads matching targets.
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
     if (generation !== this.generation) return;
     this.files = files;
     this.names = names;
     this.aliases = aliases;
     this.referenceRecords = referenceRecords;
+    this.referenceDeclarations = referenceDeclarations;
+    this.folderGlossaryHeadings = folderGlossaryHeadings;
     this.cached.clear();
   }
 
@@ -137,7 +176,7 @@ export class FileVault {
   *markdownFiles(source: string): Iterable<string> {
     if (!isWithin(this.root, source)) return;
     for (const file of this.files.values()) {
-      if (path.extname(file).toLowerCase() === '.md' && this.safeFile(file)) yield file;
+      if (markdownFile.test(file) && this.safeFile(file)) yield file;
     }
   }
 
@@ -149,17 +188,23 @@ export class FileVault {
     }
   }
 
-  private referenceRecord(file: string) {
+  folderGlossaryHeading(file: string): string | undefined {
+    return this.folderGlossaryHeadings.get(file);
+  }
+
+  private referenceRecord(file: string, declarations = this.referenceDeclarations.get(path.dirname(file)) ?? null, heading = this.folderGlossaryHeading(file) ?? '') {
     if (!this.safeFile(file)) return;
     try {
       const dirty = this.dirtyText(file);
       const stat = fs.statSync(file);
-      const signature = dirty === undefined ? `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`
+      const sourceSignature = dirty === undefined ? `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`
         : `dirty:${createHash('sha256').update(dirty).digest('hex')}`;
+      const signature = JSON.stringify([sourceSignature, declarations?.signature, heading]);
       const cached = this.referenceRecords.get(file);
       if (cached?.signature === signature) return cached;
       const source = this.read(file);
-      const record = { signature, identifiers: source === undefined ? new Set<string>() : previewReferenceIdentifiers(source) };
+      const folder = heading ? { file: path.basename(file), heading } : undefined;
+      const record = { signature, identifiers: source === undefined ? new Set<string>() : previewReferenceIdentifiers(source, declarations?.value, folder) };
       this.referenceRecords.set(file, record);
       return record;
     } catch { return; }

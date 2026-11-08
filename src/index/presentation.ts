@@ -81,7 +81,7 @@ export function presentError(error: ErrorRecord) {
   }
   const candidates = Array.isArray(error.details) ? error.details.map(candidate => {
     if (!candidate || typeof candidate !== 'object') return undefined;
-    const fields = Object.hasOwn(candidate, 'name') && Object.hasOwn(candidate, 'file') ? ['id', 'name', 'file']
+    const fields = Object.hasOwn(candidate, 'name') && Object.hasOwn(candidate, 'file') ? ['id', 'name', 'file', 'reviewed']
       : ['id', 'title', 'name', 'line', 'headingPath', 'file', 'kind', 'label'];
     return Object.fromEntries(fields
       .filter(key => Object.hasOwn(candidate, key)).map(key => [key, candidate[key]]));
@@ -106,7 +106,13 @@ export function formatCliResult(result: QueryResult): string {
     ...(table.caption ? [display(table.caption)] : []), ...(table.headers.length ? [`headers: ${table.headers.map(display).join(' | ')}`] : []),
   ].join('; ') || 'table'}${table.contentStatus === 'referenceOnly' ? ' (external data)' : ''}`), 'No tables found.');
   if ('images' in result) return list(result.images.map(image => `${cliLocation(image)}: ${display(image.source)}${image.alt ? `; alt: ${display(image.alt)}` : ''}${image.figure?.caption ? `; caption: ${display(image.figure.caption)}` : ''}${image.resolution?.status === 'missing' ? ' (missing)' : ''}`), 'No images found.');
-  if ('terms' in result) return list(result.terms.map(term => `${display(term.name)}${term.aliases.length ? ` [aliases: ${term.aliases.map(display).join(', ')}]` : ''} (${display(term.file)})`), 'No terms found.');
+  if ('terms' in result) return list(result.terms.map(term => [
+    display(term.name), term.ko && `[ko: ${display(term.ko)}]`,
+    term.aliases.length && `[aliases: ${term.aliases.map(display).join(', ')}]`,
+    term.formerly?.length && `[formerly: ${term.formerly.map(display).join(', ')}]`,
+    term.reviewed === false && '[unreviewed]',
+    `(${display(term.file)})`,
+  ].filter(Boolean).join(' ')), 'No terms found.');
   if ('glossaries' in result) {
     const counts = new Map<string, number>(), titles = new Map<string, number>();
     for (const glossary of result.glossaries) {
@@ -139,7 +145,8 @@ export function formatCliError(error: ErrorRecord): string {
     const title = candidate.title ?? candidate.name ?? candidate.label ?? candidate.kind ?? 'Selection';
     const context = [...(candidate.file ? [display(candidate.file)] : []),
       ...(candidate.headingPath?.length ? [candidate.headingPath.map(display).join(' > ')] : []),
-      ...(candidate.id ? [`id: ${candidate.id}`] : []), ...(candidate.kind ? [`kind: ${candidate.kind}`] : [])];
+      ...(candidate.id ? [`id: ${candidate.id}`] : []), ...(candidate.kind ? [`kind: ${candidate.kind}`] : []),
+      ...(candidate.reviewed === false ? ['unreviewed'] : [])];
     return `  - ${display(title)}${context.length ? ` (${context.join('; ')})` : ''}\n`;
   }).join('');
   return `${record.code}: ${record.message}\n${candidates}`;
@@ -149,7 +156,7 @@ const location = (item: { file: string; headingPath: string[] }) => ({ file: ite
   ...(item.headingPath.length ? { headingPath: item.headingPath } : { sectionId: 'preamble' }) });
 const selectionInfo = (item: SelectionInfo) => item.kind === 'section'
   ? { kind: item.kind, file: item.file, title: item.title, headingPath: item.headingPath }
-  : { kind: item.kind, file: item.file, name: item.name };
+  : { kind: item.kind, file: item.file, name: item.name, ...(item.reviewed === undefined ? {} : { reviewed: item.reviewed }) };
 const presentSelection = (selection: ReadSelection) => {
   const { sourceHash: _hash, ...choice } = selection; return choice;
 };
@@ -176,14 +183,18 @@ export function presentResult(result: QueryResult, query?: IndexQuery): Record<s
       ...(glossary.headingPath.length ? { title: glossary.headingPath.at(-1), ...(titles.get(JSON.stringify([glossary.file, glossary.headingPath.at(-1)]))! > 1 ? { headingPath: glossary.headingPath } : {}) } : {}),
       ...(glossary.name ? { name: glossary.name } : {}), terms: glossary.termCount })) };
   }
-  else if ('terms' in result) data = { terms: result.terms.map(term => ({ id: term.id, name: term.name, ...(term.aliases.length ? { aliases: term.aliases } : {}), file: term.file })) };
+  else if ('terms' in result) data = { terms: result.terms.map(term => ({
+    id: term.id, name: term.name, ...(term.ko ? { ko: term.ko } : {}), ...(term.aliases.length ? { aliases: term.aliases } : {}),
+    ...(term.formerly?.length ? { formerly: term.formerly } : {}), ...(term.reviewed === undefined ? {} : { reviewed: term.reviewed }), file: term.file,
+  })) };
   else if ('budget' in result) data = { items: result.items.map(item => item.status === 'error'
     ? { selector: presentSelection(item.selector), error: presentError(item.error) }
     : { ...selectionInfo(item), ...(item.covers?.length ? { covers: item.covers.map(selectionInfo) } : {}),
       ...(item.status === 'ok' ? { content: item.content } : { omitted: true, reason: 'budget', requiredChars: item.requiredChars }) }),
     ...(result.items.some(item => item.status === 'omitted') ? { budget: result.budget } : {}) };
   else data = { items: result.items.map(item => item.status === 'error' ? { selector: item.selector, error: presentError(item.error) }
-    : { kind: item.kind, file: item.file, ...(item.name ? { name: item.name } : {}), content: item.content }) };
+    : { kind: item.kind, file: item.file, ...(item.name ? { name: item.name } : {}),
+      ...('reviewed' in item && item.reviewed !== undefined ? { reviewed: item.reviewed } : {}), content: item.content }) };
   const status = retrievalStatus(result, query);
   return { complete: status.complete, ...data, ...(status.issues.length ? { issues: status.issues } : {}) };
 }

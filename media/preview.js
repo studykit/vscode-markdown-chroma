@@ -100,6 +100,15 @@ import mermaid from 'mermaid';
       element.dataset.obsidianFoldBound = 'true';
       element.addEventListener('toggle', () => folds.set(key, element.open));
     });
+    document.querySelectorAll('.myst-term-definition > dd > details.myst-term-details').forEach(element => {
+      if (element.dataset.termFoldBound) return;
+      const term = element.closest('.myst-term-definition')?.querySelector(':scope > dt[id]');
+      if (!term) return;
+      const key = `term:${term.id}`;
+      if (folds.has(key)) element.open = folds.get(key);
+      element.dataset.termFoldBound = 'true';
+      element.addEventListener('toggle', () => folds.set(key, element.open));
+    });
   };
   const observer = new MutationObserver(restore);
   observer.observe(document.documentElement, { childList: true, subtree: true });

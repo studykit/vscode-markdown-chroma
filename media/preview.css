@@ -79,6 +79,17 @@ mark[data-highlight="purple"] { background: rgba(161, 102, 220, .3); }
 .obsidian-footnote-backref:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
 
 /* MyST uses the native Markdown preview's font, colors and spacing. */
+.myst-term-definition { margin: 1.5em 0; }
+.myst-term-definition > dt { font-size: 1.15em; font-weight: 600; margin-bottom: .35em; }
+.myst-term-definition > dd { margin: 0; }
+.myst-term-definition > dd > p { margin: 0 0 .6em; }
+.myst-term-translation { font-size: .85em; font-weight: 400; color: var(--vscode-descriptionForeground); margin-inline-start: .4em; }
+.myst-term-details > summary { cursor: pointer; width: fit-content; padding-block: .15em; }
+.myst-term-details > summary:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
+.myst-term-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25em 1em; margin: .45em 0 0; padding-inline-start: 1.2em; }
+.myst-term-fields > dt { color: var(--vscode-descriptionForeground); }
+.myst-term-fields > dd { margin: 0; overflow-wrap: anywhere; }
+.myst-term-fields .myst-unresolved { color: inherit; }
 .myst-title { font-weight: 600; margin-bottom: .5em; }
 .myst-admonition, .myst-aside { margin: 1em 0; padding: .85em 1em; border-left: 3px solid var(--vscode-textLink-foreground); background: var(--vscode-textBlockQuote-background); border-radius: 4px; }
 .myst-admonition.warning, .myst-admonition.danger, .myst-admonition.error { border-color: var(--vscode-editorWarning-foreground); }

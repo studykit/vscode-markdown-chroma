@@ -3,6 +3,7 @@ import { parseDocument } from 'yaml';
 import type { PreviewHost, RenderEnvironment } from './types';
 
 export type Settings = Record<string, any>;
+export const termDirectiveDeclarations = (settings?: Settings): unknown => settings?.markdown_chroma?.term_directives;
 export function mergeSettings(base: Settings, override: Settings): Settings {
   const result = { ...base };
   for (const [key, value] of Object.entries(override)) {
@@ -14,7 +15,7 @@ export function mergeSettings(base: Settings, override: Settings): Settings {
 }
 
 /** Optional nearest configuration, confined to the same boundary as note embeds. */
-export function mystConfiguration(host: PreviewHost, env: RenderEnvironment): { project: Settings; root?: string; error?: string } {
+export function mystConfiguration(host: Pick<PreviewHost, 'resolve' | 'read'>, env: RenderEnvironment): { project: Settings; root?: string; error?: string } {
   const source = env.currentDocument;
   if (!source || (source.scheme && source.scheme !== 'file')) return { project: {} };
   const read = (file: string, stack: string[]): Settings => {

@@ -14,6 +14,7 @@ import { isWithin } from '../vault';
 import { extract, hash, parseIndex } from './parser';
 import { isExcludedIndexPath } from './paths';
 import { inspectPlugin, type PluginNames } from './plugins';
+import { FOLDER_GLOSSARY_CONFIG, matchFolderGlossary, parseFolderGlossaryConfig } from '../folder-glossary';
 import { IndexError, PARSER_VERSION, SCHEMA_VERSION, type ContentItem, type Diagnostic, type DocumentIndex, type ProjectIndex, type Reference, type Resolution, type Section } from './types';
 import { matchesTermIdentifier } from './terms';
 
@@ -111,7 +112,6 @@ export class MarkdownIndex {
         return this.files.has(relative) ? { status: 'found', path: absolute } : { status: 'missing' };
       },
       read: absolute => { try { return this.readFile(portable(path.relative(this.root, absolute))); } catch { return undefined; } },
-      documentUri: absolute => ({ fsPath: absolute }), resourceUri: absolute => absolute, settings: () => ({ maxEmbedDepth: 1 }),
     }, { currentDocument: { fsPath: path.join(this.root, file) } });
     return config;
   }
@@ -179,7 +179,12 @@ export class MarkdownIndex {
         if (typeof doc.file !== 'string' || typeof doc.sourceHash !== 'string' || typeof doc.configHash !== 'string' || !doc.properties || typeof doc.properties !== 'object') return;
         for (const field of ['sections', 'tables', 'images', 'glossaries', 'terms', 'targets', 'outgoing', 'aliases', 'tags', 'diagnostics', 'bibliographyKeys']) if (!Array.isArray(doc[field])) return;
         for (const field of ['sections', 'tables', 'images', 'glossaries', 'terms', 'targets', 'outgoing']) for (const item of doc[field]) if (!Number.isSafeInteger(item.startLine) || !Number.isSafeInteger(item.endLine) || item.startLine < 1 || item.endLine < item.startLine) return;
-        for (const term of doc.terms) if (!Array.isArray(term.aliases) || term.aliases.some((alias: unknown) => typeof alias !== 'string')) return;
+        for (const term of doc.terms) {
+          if (!Array.isArray(term.aliases) || term.aliases.some((alias: unknown) => typeof alias !== 'string')) return;
+          if (term.ko !== undefined && typeof term.ko !== 'string') return;
+          if (term.reviewed !== undefined && typeof term.reviewed !== 'boolean') return;
+          if (term.formerly !== undefined && (!Array.isArray(term.formerly) || term.formerly.some((name: unknown) => typeof name !== 'string'))) return;
+        }
       }
       return data;
     } catch { return; }
@@ -226,6 +231,12 @@ export class MarkdownIndex {
     try {
       this.files.clear(); this.scanDiagnostics = []; this.stats = { parsed: 0, reused: 0, removed: 0 };
       this.scan(this.root);
+      let folderGlossary = parseFolderGlossaryConfig(undefined);
+      if (this.files.has(FOLDER_GLOSSARY_CONFIG)) {
+        try { folderGlossary = parseFolderGlossaryConfig(this.readFile(FOLDER_GLOSSARY_CONFIG)); }
+        catch (error) { folderGlossary.error = errorMessage(error); }
+      }
+      if (folderGlossary.error) this.scanDiagnostics.push({ code: 'invalidGlossaryConfig', severity: 'error', message: folderGlossary.error });
       const previous = rebuild ? undefined : this.loadCache();
       const old = new Map(previous?.documents.map(document => [document.file, document]) ?? []);
       const documents: DocumentIndex[] = [];
@@ -239,13 +250,15 @@ export class MarkdownIndex {
           const config = this.config(file);
           const frontmatter = parseDocumentForConfig(source);
           const settings = mergeSettings(config.project, frontmatter);
+          settings.settings = { ...settings.settings, markdown_chroma: config.project.settings?.markdown_chroma };
           const bib = this.bibliography(settings, file);
           const plugin = this.plugins(settings, file, plugins);
-          const configHash = hash(JSON.stringify([settings, config.error, bib.fingerprint, bib.diagnostics, plugin.fingerprints, plugin.diagnostics]));
+          const glossary = matchFolderGlossary(folderGlossary, file);
+          const configHash = hash(JSON.stringify([settings, config.error, bib.fingerprint, bib.diagnostics, plugin.fingerprints, plugin.diagnostics, glossary]));
           let document: DocumentIndex;
           if (cached?.sourceHash === hash(source) && cached.configHash === configHash) { document = structuredClone(cached); this.stats.reused++; }
           else {
-            document = parseIndex(file, source, settings, plugin.names); this.stats.parsed++;
+            document = parseIndex(file, source, settings, plugin.names, glossary); this.stats.parsed++;
             if (config.error) document.diagnostics.push({ code: 'invalidConfig', message: config.error, file, severity: 'error' });
             document.diagnostics.push(...bib.diagnostics); document.bibliographyKeys = bib.keys;
             document.diagnostics.push(...plugin.diagnostics);

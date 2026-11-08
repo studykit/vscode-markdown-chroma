@@ -5,8 +5,8 @@ import { defaultOptions } from 'myst-parser';
 import { normalizeLabel } from 'myst-common';
 import { VFile } from 'vfile';
 import { parseFrontmatter } from '../frontmatter';
-import { mergeSettings } from '../myst-config';
-import { previewMystOptions } from '../myst-options';
+import { mergeSettings, termDirectiveDeclarations } from '../myst-config';
+import { configuredTermDirectives, previewMystOptions } from '../myst-options';
 import { parseExpansion } from '../preview-plugins/expansion-parser';
 import { codeFence, markdownFromAst, occurrences, selectOccurrence, type ExpansionNode, type Occurrence } from './expansion-source';
 import { extract, hash } from './parser';
@@ -175,8 +175,10 @@ export async function expandDirective(index: MarkdownIndex, args: ExpansionArgum
     const settings = mergeSettings(config.project, parseFrontmatter(source)?.values ?? {});
     // Only myst.yml declarations authorize executable code, never page overrides.
     settings.plugins = config.project.plugins;
+    settings.settings = { ...settings.settings, markdown_chroma: config.project.settings?.markdown_chroma };
+    const declaredTerm = configuredTermDirectives(termDirectiveDeclarations(settings.settings)).some(spec => spec.name === item.name);
     let tree: ExpansionNode;
-    if (builtinNames.has(item.name) && (['include', 'literalinclude', 'embed'].includes(item.name) || !(options.allowProjectPlugins && Array.isArray(settings.plugins) && settings.plugins.length))) {
+    if ((builtinNames.has(item.name) || declaredTerm) && (['include', 'literalinclude', 'embed'].includes(item.name) || !(options.allowProjectPlugins && Array.isArray(settings.plugins) && settings.plugins.length))) {
       const vfile = new VFile({ path: owner });
       tree = parseExpansion(executableSource(item), vfile, [], [], settings.settings, Math.max(1, maxDepth - depth + 1));
       for (const message of vfile.messages) issue(message.reason, owner, 'expansionSyntax');

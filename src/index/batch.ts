@@ -30,7 +30,7 @@ export function readBatch(index: MarkdownIndex, selections: ReadSelection[], max
         if (matches.length !== 1) throw new IndexError(matches.length ? 'ambiguousTerm' : 'termNotFound',
           matches.length ? `Multiple definitions match: ${selector.name}` : `Term was not found: ${selector.name}`, matches.length ? matches : undefined);
         const term = matches[0];
-        item = { info: { kind: 'term', file: term.file, name: term.name }, startLine: term.startLine, endLine: term.endLine,
+        item = { info: { kind: 'term', file: term.file, name: term.name, ...(term.reviewed === undefined ? {} : { reviewed: term.reviewed }) }, startLine: term.startLine, endLine: term.endLine,
           sourceHash: term.sourceHash, order };
       }
       if (selector.sourceHash && selector.sourceHash !== item.sourceHash)

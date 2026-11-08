@@ -118,7 +118,7 @@ Every preview uses the same MyST parser with Obsidian syntax enabled, including 
 | Diagrams | Mermaid |
 | Asides and margins | aside/margin/sidebar/topic; placed in the document flow in narrow previews |
 | Grids, tabs, and cards | Responsive grids, interactive tabs, and cards |
-| Glossaries, terms, and index | Glossary/term references and index metadata |
+| Glossaries, terms, and index | Glossaries, standalone term definitions, and term references |
 | Contents, dropdowns, and chemistry | `{toc}` links to headings in the rendered document; `{dropdown}` renders a native disclosure; `{chem}` formats formula subscripts |
 
 Examples: [overview](../examples/myst/index.md), [layouts](../examples/myst/layout.md), [syntax](../examples/myst/syntax.md), and [glossaries](../examples/myst/glossary.md). The glossary example covers multiple glossaries, `{term}` references, custom display text, and references placed before definitions. See the official [MyST authoring guide](https://mystmd.org/guide), [asides](https://mystmd.org/guide/asides), and [figures](https://mystmd.org/guide/figures) documentation for syntax.
@@ -146,6 +146,47 @@ Cache worker
 ```
 
 Keep all names at the same indentation as the glossary fence and indent the shared definition. Standard `Term` followed by `: Definition` remains supported. Alias matching uses MyST's label normalization. A name shared by multiple definitions is ambiguous.
+
+### Standalone term definitions
+
+Use `{term-def}` to define a single term anywhere in a Markdown document. The directive takes the canonical name and a Markdown definition. Markdown Chroma renders and indexes it without project configuration.
+
+```markdown
+:::{term-def} Working copy
+:ko: 작업 사본
+:aliases: checked-out copy
+:formerly: local copy
+:distinct-from: Repository
+
+A checkout of a repository that you can edit.
+:::
+
+See {term}`Working copy` or {term}`the checkout <local copy>`.
+```
+
+All options are optional. The Korean name appears beside the canonical name when it differs. **Term information** expands to show aliases, former names, and related terms. The last three options take comma-separated names. A `:distinct-from:` name links to its definition when it resolves. The existing `{term}` role accepts the canonical name, Korean name, aliases, and former names. Standalone definitions and `{glossary}` blocks can appear in the same document.
+
+### Folder glossary references
+
+Markdown Preview shares the [folder glossary rules](CLI.md#folder-glossaries) in the preview root's `chroma.index.yml`. A `{term}` reference to a matching file stem or frontmatter alias opens the existing definition heading. This works with ordinary Markdown sections and with both review states.
+
+### Project term directives
+
+To use another directive name or different option spellings in one project, declare a mapping in its `myst.yml`. The directive argument is the canonical name and the body is the definition. Keys in each mapping are the standard `{term-def}` options. An omitted key keeps its standard spelling.
+
+```yaml
+project:
+  settings:
+    markdown_chroma:
+      term_directives:
+        kb-term:
+          aliases: names
+          formerly: previous
+```
+
+This enables `{kb-term}` with `:names:` and `:previous:` in that project. Markdown Preview, CLI and MCP share the declaration. It is read from project configuration and inherited through local `extends`.
+
+Optionally register a JavaScript renderer for the project directive through `project.plugins`. The renderer uses the usual trusted-workspace opt-in. For the same `{term}` links, return a MyST `definitionTerm` with the canonical name. The preview attaches the declared term's anchor and alternate names to that node. Indexing and cross-file target discovery read the original source and the YAML mapping.
 
 ### Project-defined MyST plugins
 
