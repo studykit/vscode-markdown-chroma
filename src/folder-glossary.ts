@@ -1,6 +1,7 @@
 import { posix } from 'node:path';
 import { Minimatch } from 'minimatch';
-import { toText, type GenericNode } from 'myst-common';
+import { toText } from 'myst-common';
+import type { GenericNode } from 'myst-common' with { 'resolution-mode': 'import' };
 import { parseDocument } from 'yaml';
 import { z } from 'zod';
 import type { Frontmatter } from './frontmatter';

@@ -21,7 +21,7 @@ Build and package a VS Code extension:
 npm run package
 ```
 
-The current manifest produces `artifacts/markdown-chroma-0.1.2.vsix`. Install it with VS Code's `Extensions: Install from VSIX...` command. Keep artifact names and documentation aligned with `package.json` when changing the version.
+The current manifest produces `artifacts/markdown-chroma-0.2.0.vsix`. Install it with VS Code's `Extensions: Install from VSIX...` command. Keep artifact names and documentation aligned with `package.json` when changing the version.
 
 For CLI development, run a built entry point directly:
 
@@ -37,12 +37,14 @@ To create and install the npm archive:
 
 ```sh
 npm pack
-npm install -g ./markdown-chroma-0.1.2.tgz
+npm install -g ./markdown-chroma-0.2.0.tgz
 ```
 
 `npm pack` invokes the build through `prepack`. Generated bundles, archives, and VSIX files are ignored by Git.
 
 The npm package contains both CLI executables, the `markdown-chroma/index` API, and the `markdown-chroma/myst-folder-glossary` build transform. Verify the packed archive in an isolated consumer project, including CLI commands, MCP calls and API declarations. Keep version numbers, archive names and pinned `npx` examples aligned.
+
+The public MyST declarations depend on `@jupyterlab/nbformat`. Keep it in the npm package dependencies because `myst-spec` declares it only for development.
 
 ## Runtime verification
 
