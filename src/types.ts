@@ -31,6 +31,8 @@ export type Resolution =
   | { status: 'missing' | 'ambiguous' | 'outside'; candidates?: string[] };
 
 export interface PreviewHost {
+  language?: string;
+  folderGlossaryHeading?(file: string): string | undefined;
   referenceFiles?(identifier: string, source: string): Iterable<string>;
   markdownFiles?(source: string): Iterable<string>;
   parseMystPlugins?(source: string, file: string, project: Record<string, any>): PluginParseResult | undefined;

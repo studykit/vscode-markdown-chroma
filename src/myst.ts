@@ -7,17 +7,18 @@ import type Token from 'markdown-it/lib/token.mjs';
 import { parseMarkdown } from './markdown-parser';
 import { decorateCode } from './code-lines';
 import { basicTransformations, glossaryTransform, abbreviationTransform, ReferenceState, enumerateTargetsTransform, resolveLinksAndCitationsTransform, resolveReferencesTransform } from 'myst-transforms';
-import { previewMystOptions as options } from './myst-options';
+import { configuredTermDirectives, previewMystOptions as options } from './myst-options';
 import { VFile } from 'vfile';
 import { validateNumbering } from 'myst-frontmatter';
 import { renderToString } from 'katex';
 import { Cite } from '@citation-js/core';
 import '@citation-js/plugin-bibtex';
-import { parseFrontmatter } from './frontmatter';
-import { mystConfiguration, mergeSettings, type Settings } from './myst-config';
+import { parseFrontmatter, type Frontmatter } from './frontmatter';
+import { attachFolderTerm, findFolderTerm } from './folder-glossary';
+import { mystConfiguration, mergeSettings, termDirectiveDeclarations, type Settings } from './myst-config';
 import type { PreviewHost, RenderEnvironment } from './types';
 import { pluginRecovery } from './preview-plugins/events';
-import { normalizeGlossaries, resolveGlossaryAliases } from './glossary';
+import { applyDeclaredTermTargets, glossaryAliasTargets, glossaryIdentifier, normalizeGlossaries, resolveGlossaryAliases, termDetailLabel } from './glossary';
 
 // The official parser owns syntax. This adapter renders its AST in VS Code's
 // existing Markdown preview, without a project, server, shell or web theme.
@@ -68,6 +69,16 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
   const nativeParse = md.parse.bind(md);
   let referenceCache: { source: string; tokens: Token[] } | undefined;
   const targetCache = new Map<string, { source: string; settings: string; state: ReferenceState }>();
+  const externalAliases = new WeakMap<ReferenceState, ReturnType<typeof glossaryAliasTargets>>();
+  const targetIdentifier = (state: ReferenceState, label: string) => {
+    const aliases = externalAliases.get(state);
+    return aliases?.has(label) ? aliases.get(label) : label;
+  };
+  const isExplicitTarget = (state: ReferenceState, label: string) => {
+    const id = targetIdentifier(state, label);
+    const target = id ? state.getTarget(id)?.node as Node | undefined : undefined;
+    return target && !target.implicit;
+  };
   const TokenClass = nativeParse('', {})[0]?.constructor as typeof Token | undefined;
   // Empty input has no tokens; obtain the constructor from a paragraph.
   const TokenType = TokenClass ?? nativeParse('x', {})[0].constructor as typeof Token;
@@ -80,15 +91,22 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
   // VS Code also consumes parse tokens for its Markdown language service.
   // Keep a heading outline there while the MyST AST owns rendered content.
   md.renderer.render = (tokens, settings, env) => nativeRender(tokens.filter(token => !token.meta?.mystOutline), settings, env);
-  const parse = (source: string, file?: string, project: Settings = {}) => {
+  const parse = (source: string, file?: string, project: Settings = {}, allowPlugins = true, frontmatter?: Frontmatter) => {
     const vfile = new VFile({ path: file });
     // Executable declarations come from myst.yml only. Re-discover for each
     // included file so plugin paths and definitions stay in its own project.
     const config = file ? mystConfiguration(host, { currentDocument: host.documentUri(file) }) : undefined;
-    const plugins = file ? host.parseMystPlugins?.(source, file, { ...project, plugins: config?.project.plugins }) : undefined;
-    const parseOptions = { ...options, extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile };
+    const declarations = termDirectiveDeclarations(config?.project.settings);
+    const configured = configuredTermDirectives(declarations);
+    const plugins = file && allowPlugins ? host.parseMystPlugins?.(source, file, { ...project, plugins: config?.project.plugins,
+      settings: { ...project.settings, markdown_chroma: config?.project.settings?.markdown_chroma } }) : undefined;
+    const parseOptions = { ...options, directives: [...options.directives, ...configured],
+      extensions: { ...options.extensions, math: project.settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile };
     const parsed = parseMarkdown(source, parseOptions);
+    const folderHeading = file && host.folderGlossaryHeading?.(file);
+    const folderTerm = file && folderHeading ? findFolderTerm(parsed.tree, path.basename(file), folderHeading, frontmatter).term : undefined;
     const tree = plugins?.tree ?? parsed.tree;
+    if (plugins?.tree && configured.length) applyDeclaredTermTargets(parsed.tree, tree, new Set(configured.map(spec => spec.name)));
     const problems = [...(plugins?.errors ?? []), ...(plugins?.messages ?? []).map(message => `MyST${message.line ? ` line ${message.line}` : ''}: ${message.reason}`)];
     if (plugins?.errors.length || plugins?.diagnostics?.length) problems.push(pluginRecovery);
     if (plugins?.pending) problems.push('Loading MyST project plugins; Preview will refresh when ready.');
@@ -108,15 +126,16 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       if (token) token.meta = { ...token.meta, mystIdentifier: node.identifier, mystAnchor: node.html_id ?? node.identifier, mystTitle: text(node) };
     });
     glossaryTransform(tree, vfile);
+    if (folderTerm) attachFolderTerm(tree, folderTerm);
     abbreviationTransform(tree, { abbreviations: project.abbreviations });
     return { tree, vfile, referenceTokens };
   };
   const stripHeader = (source: string) => {
-    const match = /^---\s*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)\s*(?:\r?\n|$)/.exec(source);
+    const match = /^(?:\uFEFF)?---\s*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)\s*(?:\r?\n|$)/.exec(source);
     if (!match) return { body: source, header: '', metadata: {} as Record<string, any> };
-    const metadata = parseFrontmatter(source)?.values ?? {};
+    const frontmatter = parseFrontmatter(source);
     // Blank lines retain the editor's original line positions.
-    return { body: match[0].replace(/[^\n]/g, '') + source.slice(match[0].length), header: match[0], metadata };
+    return { body: match[0].replace(/[^\n]/g, '') + source.slice(match[0].length), header: match[0], metadata: frontmatter?.values ?? {}, frontmatter };
   };
   const fileFor = (target: string, env: RenderEnvironment) => {
     const file = env.currentDocument;
@@ -138,13 +157,13 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
   const error = (message: string) => `<span class="myst-error" role="note">${escape(message)}</span>`;
 
   md.parse = (source, env: RenderEnvironment = {}) => {
-    const { body, header, metadata } = stripHeader(source);
+    const { body, header, metadata, frontmatter: headerProperties } = stripHeader(source);
     // Resolve references and include files once at render time, so cached tokens
     // also see dirty VS Code buffers and resource URLs for the current webview.
     const token = new TokenType('myst_document', '', 0);
     // Reference discovery uses the built-in parser without executing project
     // plugins, and validates native targets against actual MyST blocks.
-    token.meta = { body, metadata, referenceTokens: () => {
+    token.meta = { body, metadata, frontmatter: headerProperties, referenceTokens: () => {
       // A document can contain hundreds of links to itself. Reuse one bounded
       // source snapshot while fresh saved/dirty source still invalidates it.
       if (referenceCache?.source !== source) referenceCache = { source, tokens: parse(body, undefined, metadata).referenceTokens };
@@ -168,10 +187,10 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
   };
 
   md.renderer.rules.myst_document = (tokens, index, _options, env: RenderEnvironment) => {
-    const { body, metadata: page } = tokens[index].meta;
+    const { body, metadata: page, frontmatter } = tokens[index].meta;
     const config = mystConfiguration(host, env);
     const metadata = mergeSettings(config.project, page);
-    const { tree } = parse(body, env.currentDocument?.fsPath, metadata);
+    const { tree } = parse(body, env.currentDocument?.fsPath, metadata, true, frontmatter);
     const file = env.currentDocument?.fsPath ?? '';
     const vfile = new VFile({ path: file || undefined });
     const notebookContext = env.mystNotebookContext as { stack: string[]; budget: { count: number; bytes: number } } | undefined;
@@ -205,7 +224,8 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
             source = lines.slice(first, last < 0 ? undefined : last + (filter.endAt ? 1 : 0)).join('\n');
           }
         }
-        node.children = node.literal ? [{ type: 'code', value: source, lang: node.lang }] : parse(stripHeader(source).body, included.file, metadata).tree.children;
+        const includedHeader = stripHeader(source);
+        node.children = node.literal ? [{ type: 'code', value: source, lang: node.lang }] : parse(includedHeader.body, included.file, metadata, true, includedHeader.frontmatter).tree.children;
         const childEnv = { ...environment, currentDocument: host.documentUri(included.file), mystIncluded: true };
         node.children?.forEach(child => prepare(child as Node, childEnv, [...stack, included.file]));
         return;
@@ -248,12 +268,13 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       const source = host.read(targetFile);
       if (source === undefined || (readBudget.bytes += Buffer.byteLength(source)) > 4 * 1024 * 1024) return;
       const header = stripHeader(source);
-      const settings = mergeSettings(mystConfiguration(host, { currentDocument: host.documentUri(targetFile) }).project, header.metadata);
-      const signature = JSON.stringify(settings);
+      const config = mystConfiguration(host, { currentDocument: host.documentUri(targetFile) });
+      const settings = mergeSettings(config.project, header.metadata);
+      const signature = JSON.stringify([settings, termDirectiveDeclarations(config.project.settings), host.folderGlossaryHeading?.(targetFile)]);
       const cached = targetCache.get(targetFile);
       let target = cached?.source === source && cached.settings === signature ? cached.state : undefined;
       if (!target) {
-        const parsed = parse(header.body, undefined, settings);
+        const parsed = parse(header.body, targetFile, settings, false, header.frontmatter);
         const slugs = new GithubSlugger();
         walk(parsed.tree, node => {
           if (node.type !== 'heading') return;
@@ -271,6 +292,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
           : first?.type === 'heading' && first.depth === 1 && text(first).trim() ? text(first) : path.basename(targetFile, path.extname(targetFile));
         target = new ReferenceState(targetFile, { vfile: parsed.vfile, frontmatter: { ...settings, title, numbering: validateNumbering(settings.numbering, { property: 'numbering', messages: {} }) } });
         enumerateTargetsTransform(parsed.tree, { state: target });
+        externalAliases.set(target, glossaryAliasTargets(parsed.tree));
         // Bound retained source/AST snapshots as well as each render's reads.
         while (targetCache.size && (targetCache.size >= 32 || [...targetCache.values()].reduce((sum, entry) => sum + Buffer.byteLength(entry.source), 0) + Buffer.byteLength(source) > 4 * 1024 * 1024)) targetCache.delete(targetCache.keys().next().value!);
         targetCache.set(targetFile, { source, settings: signature, state: target });
@@ -317,9 +339,10 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       const sourceFile = environment.currentDocument?.fsPath;
       if (!sourceFile || (environment.currentDocument?.scheme && environment.currentDocument.scheme !== 'file')) return;
       let label = node.identifier;
+      const termReference = typeof node.label === 'string' && label === glossaryIdentifier(node.label);
       let target: ReferenceState | undefined;
       const hash = (node.label ?? '').indexOf('#');
-      if (hash > 0) {
+      if (hash > 0 && !termReference) {
         const destination = node.label.slice(0, hash);
         const resolved = fileFor(destination.startsWith('.') ? destination : `./${destination}`, environment) ?? fileFor(destination, environment);
         label = normalizeLabel(node.label.slice(hash + 1))?.identifier;
@@ -327,10 +350,11 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       } else {
         if (host.referenceFiles) {
           const candidates = [...host.referenceFiles(label, sourceFile)].filter(candidate => candidate !== file);
+          if (termReference && candidates.length > 1) return;
           // Like the project index, explicit labels win over implicit heading
           // slugs; a single remaining candidate is selected.
           const states = candidates.length > 1 ? candidates.map(targetState).filter((state): state is ReferenceState => !!state) : [];
-          const explicit = states.filter(state => !(state.getTarget(label)?.node as Node | undefined)?.implicit);
+          const explicit = states.filter(state => isExplicitTarget(state, label));
           if (candidates.length === 1) target = targetState(candidates[0]);
           else if (states.length === candidates.length && explicit.length === 1) target = explicit[0];
         } else {
@@ -343,18 +367,18 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
           }
           // Legacy hosts without a static inventory must retain bounded reads
           // and cannot choose a target after an incomplete project scan.
-          const matches = [...externalStates.values()].filter(candidate => candidate.getTarget(label));
-          const explicit = matches.filter(state => !(state.getTarget(label)?.node as Node | undefined)?.implicit);
-          if (discoveryComplete && (matches.length === 1 || explicit.length === 1)) target = matches.length === 1 ? matches[0] : explicit[0];
+          const matches = [...externalStates.values()].filter(state => state.getTarget(label) || externalAliases.get(state)?.has(label));
+          const explicit = matches.filter(state => isExplicitTarget(state, label));
+          if (discoveryComplete) target = matches.length === 1 ? matches[0] : !termReference && explicit.length === 1 ? explicit[0] : undefined;
         }
       }
-      const found = target?.getTarget(label);
-      if (!target || !found) return;
-      node.identifier = label;
+      const id = target && targetIdentifier(target, label);
+      if (!target || !id || !target.getTarget(id)) return;
+      node.identifier = id;
       resolveReferencesTransform({ type: 'root', children: [node] }, vfile, { state: target });
       if (node.resolved) {
         const destination = path.relative(path.dirname(sourceFile), target.filePath).split(path.sep).map(encodeURIComponent).join('/');
-        node.url = `./${destination}#${encodeURIComponent(node.html_id ?? label)}`;
+        node.url = `./${destination}#${encodeURIComponent(node.html_id ?? id)}`;
       }
     });
     for (const { node, original } of tentative) {
@@ -421,7 +445,8 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         }
         case 'mark': return tag('mark', node.color ? ` data-highlight="${escape(node.color)}"` : '');
         case 'text': {
-          const lines = preserveLineBreaks || md.options.breaks ? String(node.value ?? '').split(/\r?\n/) : [node.value ?? ''];
+          const value = termDetailLabel(node._termDetailLabel, host.language) ?? node.value ?? '';
+          const lines = preserveLineBreaks || md.options.breaks ? String(value).split(/\r?\n/) : [value];
           return lines.map(value => escape(value)).join('<br>');
         }
         case 'paragraph': return tag('p');
@@ -462,7 +487,11 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
         case 'list': return tag(node.ordered ? 'ol' : 'ul', attr(node) + (node.ordered && node.start ? ` start="${Number(node.start)}"` : ''));
         case 'listItem': return `<li${attr(node)}${node.task == null ? '' : ` class="obsidian-task" data-task="${escape(node.task)}"`}>${node.checked == null ? '' : `<input type="checkbox" disabled${node.checked ? ' checked' : ''}> `}${children()}</li>`;
         case 'definitionList': return tag('dl');
-        case 'definitionTerm': return `<dt${attr(node)}>${children()}${(node.aliasNodes ?? []).map((alias: Node) => `<br><span class="myst-term-alias">${alias.children?.map(child => render(child, stack)).join('') ?? ''}</span>`).join('')}</dt>`;
+        case 'definitionTerm': {
+          const translated = node.standaloneTerm && node.ko ? ` <span class="myst-term-translation" lang="ko">${escape(node.ko)}</span>` : '';
+          const aliases = (node.aliasNodes ?? []).map((alias: Node) => `<br><span class="myst-term-alias">${alias.children?.map(child => render(child, stack)).join('') ?? ''}</span>`).join('');
+          return `<dt${attr(node)}>${children()}${translated}${aliases}</dt>`;
+        }
         case 'definitionDescription': return tag('dd');
         case 'glossary':
           // Indented glossary syntax can remain paragraphs in the official AST.
@@ -558,7 +587,8 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
               }).join('');
             } catch { return error('Cannot parse embedded notebook.'); }
           }
-          const parsed = parse(stripHeader(embedded.content).body, embedded.file, metadata).tree;
+          const embeddedHeader = stripHeader(embedded.content);
+          const parsed = parse(embeddedHeader.body, embedded.file, metadata, true, embeddedHeader.frontmatter).tree;
           prepare(parsed, { ...environment, currentDocument: host.documentUri(embedded.file), mystIncluded: true }, [embedded.file]);
           if (label) { let selected: Node | undefined; walk(parsed, candidate => { if (candidate.identifier === label) selected = candidate; }); return selected ? render(selected, [...stack, target]) : error(`Embed target not found: ${label}`); }
           return render(parsed, [...stack, target]);

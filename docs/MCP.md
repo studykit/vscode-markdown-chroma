@@ -150,7 +150,7 @@ File arguments are exact paths relative to the server root. Optional arguments m
 | `list_tables` | `file`, `section` | Captions, headers, and owning heading paths |
 | `list_images` | `file`, `section` | Sources, alt text, captions, and owning heading paths |
 | `list_glossaries` | `file` | Glossary choices and term counts |
-| `list_terms` | `file`, `glossary`, `name` | Canonical term names, aliases when present, files, and IDs; `name` also matches aliases |
+| `list_terms` | `file`, `glossary`, `name`, `reviewed` | Canonical term names, files, IDs, and optional `ko`, `aliases`, `formerly`, and `reviewed`. The `name` filter matches all names. |
 | `read_terms` | **`names` or `ids`**, `file`, `sourceHash` | Multiple selected definitions; `file` applies only to name selection |
 | `read_glossaries` | **`ids` or `file` with `title` or `headingPath`** | Original Markdown for selected glossaries; titles select the owning section |
 | `read_items` | **`selections` or `ids`**, `maxChars` | Budgeted sections/terms by natural names, or legacy term/glossary IDs |
@@ -210,7 +210,9 @@ For example, `list_sections` returns:
 
 Read a listed title with `read_section({"file":"guide.md","title":"macOS"})`. A successful read returns the file and original Markdown `content`. Term/glossary batch reads return each item's kind, file, name when available, and content. Ambiguous reads provide concise `candidates` for explicit selection. CLI `--json` uses this same retrieval format. Full records remain available through the Node API and CLI `--debug`; MCP does not return them.
 
-Term names in `read_terms` and `read_items` also accept glossary aliases. All names resolve to the canonical definition and read its original source. Ambiguous canonical names or aliases return `ambiguousTerm` with candidates; choose a file or a global ID. Batch selections preserve request order and deduplicate identical selections. Selecting a glossary and one of its terms returns both.
+Term names in `read_terms` and `read_items` accept the canonical name, Korean name, aliases, and former names. All names resolve to the canonical definition and read its original source. Ambiguous names return `ambiguousTerm` with candidates. Choose a file or a global ID. Batch selections preserve request order and deduplicate identical selections. Selecting a glossary and one of its terms returns both.
+
+[Folder terms](CLI.md#folder-glossaries) have a `reviewed` boolean in listings and definition reads. Omit the filter to discover every term. Use `list_terms({"reviewed":false})` for unreviewed terms and `list_terms({"reviewed":true})` for reviewed terms. Term IDs and name reads work in both states.
 
 Queries use saved files. They do not read unsaved editor contents. Requests and background refreshes are serialized on the same service; structural queries in separate CLI/server processes share cache locks. Line reads do not acquire those locks. Cancellation can stop a lock wait but does not interrupt synchronous parsing already in progress. Structural refresh cost grows with the root size. Structural lists do not provide pagination.
 

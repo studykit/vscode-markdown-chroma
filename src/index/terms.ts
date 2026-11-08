@@ -1,6 +1,6 @@
-import { glossaryIdentifier } from '../glossary';
+import { glossaryIdentifier, termAlternateNames } from '../glossary';
 import type { Term } from './types';
 
 export const matchesTermIdentifier = (term: Term, identifier: string) =>
-  term.identifier === identifier || term.aliases.some(alias => glossaryIdentifier(alias) === identifier);
+  term.identifier === identifier || termAlternateNames(term).some(name => glossaryIdentifier(name) === identifier);
 export const matchesTermName = (term: Term, name: string) => matchesTermIdentifier(term, glossaryIdentifier(name));

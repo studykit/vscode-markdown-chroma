@@ -17,7 +17,8 @@ import * as button from 'myst-ext-button';
 import * as builder from 'unist-builder';
 import * as vfiles from 'vfile';
 import { parseMarkdown } from '../markdown-parser';
-import { previewMystOptions } from '../myst-options';
+import { configuredTermDirectives, previewMystOptions } from '../myst-options';
+import { termDirectiveDeclarations } from '../myst-config';
 import type { PluginDiagnostic } from './events';
 import { parseExpansion } from './expansion-parser';
 
@@ -127,7 +128,8 @@ async function start() {
     try {
       const vfile = new vfiles.VFile({ path: file });
       const tree = workerData.expansion ? parseExpansion(source, vfile, pluginDirectives, pluginRoles, settings, maxDepth) : parseMarkdown(source, { ...previewMystOptions,
-        directives: [...previewMystOptions.directives, ...pluginDirectives], roles: [...previewMystOptions.roles, ...pluginRoles],
+        directives: [...previewMystOptions.directives, ...pluginDirectives, ...configuredTermDirectives(termDirectiveDeclarations(settings), pluginDirectives)],
+        roles: [...previewMystOptions.roles, ...pluginRoles],
         extensions: { ...previewMystOptions.extensions, math: settings?.parser?.dollarmath === false ? { dollarmath: false, amsmath: true } : true }, vfile }).tree;
       const messages = vfile.messages.map(item => ({ reason: item.reason, line: item.line, column: item.column, fatal: item.fatal }));
       diagnostics.push(...messages.map(item => ({ phase: 'parsing' as const, file, reason: item.reason, line: item.line ?? undefined, column: item.column ?? undefined, severity: item.fatal ? 'error' as const : 'warning' as const })));

@@ -36,7 +36,7 @@ export const querySchemas = {
   tables: sectionScope,
   images: sectionScope,
   glossaries: z.strictObject(scope),
-  terms: z.strictObject({ ...scope, glossary: text.optional(), name: text.optional() }),
+  terms: z.strictObject({ ...scope, glossary: text.optional(), name: text.optional(), reviewed: z.boolean().optional() }),
   'read-term': z.strictObject({ ids: ids.optional(), names: z.array(text).min(1).optional(), ...scope, sourceHash: text.optional() })
     .refine(value => !!value.ids !== !!value.names && !(value.ids && value.file), 'Specify names or ids; file only applies to names'),
   'read-glossary': z.strictObject({ ids: ids.optional(), ...scope, title: text.optional(), headingPath: z.array(text).min(1).optional() })
@@ -148,7 +148,8 @@ function executeQuery(index: MarkdownIndex, query: IndexQuery) {
         if (matches.length !== 1) throw new IndexError('glossaryNotFound', 'Use a glossary ID from the glossaries list.');
         glossaryId = matches[0].id;
       }
-      return envelope({ terms: scope.flatMap(d => d.terms).filter(term => (!glossaryId || term.glossaryId === glossaryId) && (!args.name || matchesTermName(term, args.name))) });
+      return envelope({ terms: scope.flatMap(d => d.terms).filter(term => (!glossaryId || term.glossaryId === glossaryId)
+        && (!args.name || matchesTermName(term, args.name)) && (args.reviewed === undefined || term.reviewed === args.reviewed)) });
     }
     case 'read-term':
     case 'read-glossary':

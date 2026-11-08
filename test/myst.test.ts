@@ -9,6 +9,7 @@ import { extendMystMarkdown } from '../src/myst';
 import { crossReferenceSource, assertCrossReferences } from './cross-references';
 import { manualFootnoteSource, mixedFootnoteSource, assertFootnoteNumbers } from './footnote-numbering';
 import { glossaryLineBreakSource, assertGlossaryLineBreaks } from './glossary-line-breaks';
+import { customTermConfig, customTermSource, termDefSource, assertTermDefPreview } from './term-def';
 import { obsidianBlockSource, assertObsidianBlocks } from './obsidian-blocks';
 import { findSection } from '../src/references';
 import { unifiedPreviewSource, assertUnifiedPreview } from './unified-preview';
@@ -125,6 +126,34 @@ test('glossary alias collisions remain unresolved in preview', async t => {
   assert.equal(doc.querySelectorAll('dt').length, 2);
   assert.equal(doc.querySelector('a[href="#term-first"], a[href="#term-second"]'), null);
   assert.equal(doc.querySelector('.myst-unresolved')?.textContent, 'Shared name');
+});
+
+test('term-def renders Markdown and localized folded metadata, with local and cross-file term references', async t => {
+  const f = await fixture(t, { 'Main.md': '', 'definitions.md': termDefSource });
+  f.host.language = 'ko';
+  extendMystMarkdown(f.md, f.host);
+  assertTermDefPreview(dom(f.render(termDefSource, 'definitions.md')), 'ko');
+  const references = '{term}`Store worker` {term}`Cache handler` {term}`캐시 작업자` {term}`Legacy`';
+  const external = dom(f.render(references));
+  assert.deepEqual([...external.querySelectorAll('a')].map(link => link.getAttribute('href')),
+    ['definitions.md#term-cache-worker', 'definitions.md#term-cache-worker', 'definitions.md#term-cache-worker', 'definitions.md#term-legacy']);
+  await fs.writeFile(path.join(f.root, 'other.md'), ':::{term-def} Store worker\nAn unrelated definition.\n:::');
+  await f.vault.refresh();
+  assert.equal(dom(f.render(references)).querySelector('.myst-unresolved')?.textContent, 'Store worker');
+});
+
+test('project term mappings drive native preview and its static cross-file inventory', async t => {
+  const f = await fixture(t, { 'Main.md': '', 'kb/terms.md': customTermSource, 'kb/myst.yml': customTermConfig });
+  extendMystMarkdown(f.md, f.host);
+  const rendered = dom(f.render(customTermSource, 'kb/terms.md'));
+  assert.equal(rendered.querySelector('.myst-term-definition > dt')?.textContent, 'Cache worker');
+  assert.equal(rendered.querySelector('.myst-term-fields > dd')?.textContent, 'Cache handler');
+  const reference = '{term}`Store worker`';
+  assert.equal(dom(f.render(reference)).querySelector('a')?.getAttribute('href'), 'kb/terms.md#term-cache-worker');
+  assert.ok(dom(f.render(customTermSource)).querySelector('.myst-error'));
+  await fs.writeFile(path.join(f.root, 'kb/myst.yml'), customTermConfig.replace('previous', 'retired'));
+  await f.vault.refresh();
+  assert.ok(dom(f.render(reference)).querySelector('.myst-unresolved'));
 });
 
 test('manual footnote numbers and bracketed references match MyST in both rendering paths', async t => {

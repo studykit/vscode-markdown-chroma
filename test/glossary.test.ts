@@ -10,6 +10,7 @@ import { IndexService } from '../src/index/query';
 import { presentResult } from '../src/index/presentation';
 import { runCli } from '../src/index/cli';
 import { assertRetrievalResult } from './retrieval-contract';
+import { customTermConfig, customTermSource, termDefBlock, termDefSource } from './term-def';
 
 const definition = 'cache-node\n**캐시 노드**\nCache worker\nCACHE-NODE\n\n   A fictional **temporary** store.\n\n   A second paragraph with [[Related]].\n\n   - Saved records\n\n   | Key | Value |\n   | --- | --- |\n   | A | 1 |\n\n   ```text\n   [[Not a link]]\n   ```\n';
 const source = `# Definitions\n\n:::{glossary}\n${definition}\nNext\n: An independent definition.\n:::\n`;
@@ -88,4 +89,75 @@ test('canonical and alias reads agree across CLI, API and real MCP, including co
   const refreshed = await updated.execute({ command: 'read-term', arguments: { names: ['새 캐시 이름'] } });
   assert.ok('items' in refreshed);
   assert.equal(refreshed.items[0].status, 'ok');
+});
+
+test('standalone definitions index Korean, alternate and former names with exact source and no project plugins', async t => {
+  for (const source of [termDefSource, termDefSource.replace(/\n/g, '\r\n'), termDefSource.replace(/:::/g, '```')]) {
+    const parsed = parseIndex('definitions.md', source);
+    assert.deepEqual(parsed.diagnostics, []);
+    assert.equal(parsed.glossaries.length, 1);
+    assert.equal(parsed.terms[0].glossaryId, 'definitions.md#glossary-1');
+    const term = parsed.terms[1];
+    assert.equal(term.glossaryId, null);
+    assert.equal(term.id, 'definitions.md#term-cache-worker');
+    assert.equal(term.ko, '캐시 작업자');
+    assert.deepEqual(term.aliases, ['Cache handler']);
+    assert.deepEqual(term.formerly, ['Store worker', '이전 작업자']);
+    const fence = source.includes(':::') ? ':::' : '```';
+    const newline = source.includes('\r\n') ? '\r\n' : '\n';
+    assert.equal(extract(source, term.startLine, term.endLine), termDefBlock.replace(/:::/g, fence).replace(/\n/g, newline) + newline);
+  }
+  const directory = await fs.mkdtemp(path.join(tmpdir(), 'chroma-term-def-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const root = path.join(directory, 'notes'), cache = path.join(directory, 'cache');
+  await fs.mkdir(root);
+  await fs.writeFile(path.join(root, 'definitions.md'), termDefSource);
+  await fs.writeFile(path.join(root, 'reference.md'), '{term}`이전 작업자`');
+  const client = new Client({ name: 'term-def-test', version: '1' });
+  try {
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.resolve('dist/mcp.cjs'), '--root', root, '--cache-dir', cache, '--no-watch'], stderr: 'pipe' }));
+    const listed = (await client.callTool({ name: 'list_terms', arguments: { name: 'store worker' } })).structuredContent;
+    assert.deepEqual(listed, { complete: true, terms: [{
+      id: 'definitions.md#term-cache-worker', name: 'Cache worker', ko: '캐시 작업자',
+      aliases: ['Cache handler'], formerly: ['Store worker', '이전 작업자'], file: 'definitions.md',
+    }] });
+    const read = (await client.callTool({ name: 'read_terms', arguments: { names: ['Cache worker', 'Cache handler', 'Store worker', '캐시 작업자'] } })).structuredContent;
+    assert.deepEqual(read, { complete: true, items: [{ kind: 'term', name: 'Cache worker', file: 'definitions.md', content: termDefBlock + '\n' }] });
+    let stdout = '';
+    assert.equal(await runCli(['terms', '--root', root, '--cache-dir', cache, '--name', '이전 작업자', '--json'],
+      { stdout: value => { stdout += value; }, stderr: () => {} }), 0);
+    assert.deepEqual(JSON.parse(stdout), listed);
+    const service = new IndexService(root, cache);
+    const links = await service.execute({ command: 'backlinks', arguments: { file: 'definitions.md', term: 'term-cache-worker' } });
+    assert.ok('backlinks' in links && links.backlinks.some(link => link.file === 'reference.md'));
+    await fs.writeFile(path.join(root, 'other.md'), ':::{term-def} Store worker\nAnother term.\n:::');
+    const ambiguous = await client.callTool({ name: 'read_terms', arguments: { names: ['Store worker'] } });
+    assert.equal((ambiguous.structuredContent as any).items[0].error.code, 'ambiguousTerm');
+  } finally { await client.close(); }
+});
+
+test('project term mappings index source without running the registered renderer and refresh on config changes', async t => {
+  const directory = await fs.mkdtemp(path.join(tmpdir(), 'chroma-term-config-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const root = path.join(directory, 'notes');
+  await fs.mkdir(path.join(root, 'kb'), { recursive: true });
+  const config = path.join(root, 'kb/myst.yml');
+  const pluginConfig = customTermConfig.replace('project:\n', 'project:\n  plugins: [renderer.mjs]\n');
+  await fs.writeFile(config, pluginConfig);
+  await fs.writeFile(path.join(root, 'kb/renderer.mjs'),
+    "export default { directives: [{ name: 'kb-term', run() { throw new Error('The index must never run this.'); } }] };");
+  await fs.writeFile(path.join(root, 'kb/terms.md'), customTermSource);
+  const front = customTermConfig.slice('project:\n'.length).replace(/^  /gm, '');
+  await fs.writeFile(path.join(root, 'outside.md'), `---\n${front}---\n\n${customTermSource}`);
+  const service = new IndexService(root, path.join(directory, 'cache'));
+  const query = { command: 'terms' as const, arguments: { file: 'kb/terms.md', name: 'Store worker' } };
+  const result = presentResult(await service.execute(query), query);
+  assert.deepEqual(result, { complete: true, terms: [{
+    id: 'kb/terms.md#term-cache-worker', name: 'Cache worker', aliases: ['Cache handler'], formerly: ['Store worker'], file: 'kb/terms.md',
+  }] });
+  const outside = await service.execute({ command: 'terms', arguments: { file: 'outside.md' } });
+  assert.ok('terms' in outside && outside.terms.length === 0);
+  await fs.writeFile(config, pluginConfig.replace('previous', 'retired'));
+  const changed = await service.execute(query);
+  assert.ok('terms' in changed && changed.terms.length === 0);
 });

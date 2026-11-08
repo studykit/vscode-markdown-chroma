@@ -7,6 +7,7 @@ import { PreviewPluginManager } from '../src/preview-plugins/manager';
 import { extendMystMarkdown } from '../src/myst';
 import { fixture } from './helpers';
 import { JSDOM } from 'jsdom';
+import { customTermConfig, customTermSource } from './term-def';
 
 const plugin = `import { u } from 'unist-builder';
 import { mystParse } from 'myst-parser';
@@ -75,6 +76,31 @@ test('custom directives and roles render identically by registered names and ali
   assert.equal(await renderReady(() => f.render(canonical)), html);
   // A cached AST is cloned before mutable transforms/reference resolution.
   assert.equal(f.render(source), html);
+});
+
+test('a configured term can use a trusted custom renderer and retain source-defined alternate names', async t => {
+  const config = customTermConfig.replace('project:\n', 'project:\n  plugins: [renderer.mjs]\n');
+  const renderer = `export default { directives: [{
+    name: 'kb-term', arg: { type: String }, body: { type: 'myst' },
+    options: { names: { type: String }, previous: { type: String } },
+    run({ arg, body }) { return [{ type: 'definitionList', class: 'custom-term', children: [
+      { type: 'definitionTerm', children: [{ type: 'text', value: arg }] },
+      { type: 'definitionDescription', children: body },
+    ] }]; }
+  }] };`;
+  const f = await fixture(t, { 'Main.md': '', 'myst.yml': config, 'renderer.mjs': renderer, 'terms.md': customTermSource });
+  const manager = new PreviewPluginManager(() => {}, path.join(__dirname, '../preview-plugin-worker.cjs'));
+  t.after(() => manager.dispose());
+  f.host.parseMystPlugins = (input, file, project) => manager.parse(input, file, f.root, project, true, true);
+  extendMystMarkdown(f.md, f.host);
+  const reference = '{term}`Store worker`';
+  const html = await renderReady(() => f.render(customTermSource + '\n\n' + reference, 'terms.md'));
+  const doc = new JSDOM(html).window.document;
+  assert.equal(doc.querySelector('.custom-term > dt')?.id, 'term-cache-worker');
+  assert.equal(doc.querySelector('a')?.getAttribute('href'), '#term-cache-worker');
+  assert.equal(doc.querySelector('.myst-error'), null);
+  const other = await renderReady(() => f.render(reference));
+  assert.match(other, /href="terms\.md#term-cache-worker"/);
 });
 
 test('plugin failures, asynchronous callbacks, transforms and unsupported nodes are actionable and partial', async t => {

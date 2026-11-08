@@ -190,6 +190,7 @@
     "lucide": "^1.53.0",
     "markdown-it-mark": "^4.0.0",
     "mermaid": "11.13.0",
+    "minimatch": "10.2.6",
     "myst-common": "1.10.1",
     "myst-directives": "1.7.4",
     "myst-ext-button": "0.0.2",

@@ -16,8 +16,8 @@ export const mcpTools = [
   ['list_tables', 'tables', 'Find tables by caption and headers, with their file and owning headingPath. Read the owning section for content. External data is not fetched.'],
   ['list_images', 'images', 'Find images by source, alt text and caption, with their file and owning headingPath. Read the owning section for context; no image bytes.'],
   ['list_glossaries', 'glossaries', 'List MyST glossary containers across the root or a document, with global IDs and term counts.'],
-  ['list_terms', 'terms', 'List canonical term definitions and aliases across the root or a document, optionally by glossary ID or exact normalized name or alias.'],
-  ['read_terms', 'read-term', 'Read multiple definitions by canonical names or aliases OR global ids in request order. file disambiguates names. Ambiguous names return candidates; missing selections preserve successful results.'],
+  ['list_terms', 'terms', 'List term definitions across the root or a document. Filter by glossary ID, exact normalized name or alias, or reviewed status. Omit reviewed to include all definitions.'],
+  ['read_terms', 'read-term', 'Read definitions by canonical, Korean, alternate, or former names OR global ids in request order. file disambiguates names. Ambiguous names return candidates; missing selections preserve successful results.'],
   ['read_glossaries', 'read-glossary', 'Read a glossary by file and its owning section title or headingPath, or select global ids in request order. Includes directive syntax and all definitions.'],
   ['read_items', 'read', 'Batch-read selections: section by file/title or headingPath (own body by default), term by name and optional file. Overlapping source is merged; maxChars defaults to 12000 Unicode characters. Whole groups exceeding budget are omitted and reported; later groups may still fit. Alternatively read term/glossary ids with existing behavior.'],
 ] as const satisfies readonly (readonly [string, QueryCommand, string])[];
