@@ -432,8 +432,7 @@ test('references to untitled, unnumbered targets show the label instead of the t
   const local = '(src-1)=\n`Handler.kt#L65-L80`\n\n(src-2)=\n`Dedup.kt#L92`\n';
   const links = (source: string) => [...dom(f.render(`${source}\n\n${local}`)).querySelectorAll('a')]
     .map(a => [a.getAttribute('href'), a.textContent?.replace(/\s+/g, ' ')]);
-  assert.deepEqual(links('Checked <@src-1, @src-2>.'), [['#src-1', 'src-1'], ['#src-2', 'src-2']]);
-  assert.equal(dom(f.render(`Checked <@src-1, @src-2>.\n\n${local}`)).querySelector('p')?.textContent, 'Checked <src-1, src-2>.');
+  assert.deepEqual(links('Checked @src-1 and @src-2.'), [['#src-1', 'src-1'], ['#src-2', 'src-2']]);
   assert.deepEqual(links('{ref}`src-1` [](#src-2) @oth-para [](./other.md#oth-para)'),
     [['#src-1', 'src-1'], ['#src-2', 'src-2'], ['other.md#oth-para', 'oth-para'], ['other.md#oth-para', 'oth-para']]);
   // Author text, titles and the literal kind name as author text stay unchanged.
@@ -441,16 +440,18 @@ test('references to untitled, unnumbered targets show the label instead of the t
     [['#src-1', 'Paragraph'], ['#src-2', 'see'], ['other.md#oth-titled', 'Titled']]);
 });
 
-test('angle-bracketed citations show labels for any target, including headings and numbered targets', async t => {
+test('{src} cites labels as superscript links, grouping several in ⟨ ⟩', async t => {
   const f = await fixture(t, { 'Main.md': '', 'other.md': '(oth-dir)=\n#### src/other/\n' });
   extendMystMarkdown(f.md, f.host);
-  const targets = '(src-1)=\n#### core/loco/protocol/job/\n\n(src-2)=\n`Write.java#L1`\n\n```{figure} x.png\n:label: fig-a\nCap\n```\n';
+  const targets = '(s1)=\n#### core/loco/protocol/job/\n\n(s2)=\n`Write.java#L1`\n\n```{figure} x.png\n:label: fig-a\nCap\n```\n\n(src-client)=\n`Client.kt`\n';
   const render = (source: string) => dom(f.render(`${source}\n\n${targets}`));
-  const links = (source: string) => [...render(source).querySelectorAll('p a')].map(a => [a.getAttribute('href'), a.textContent?.replace(/\s+/g, ' ')]);
-  assert.deepEqual(links('Job <@src-1> and <@src-2, @fig-a, @oth-dir>.'),
-    [['#src-1', 'src-1'], ['#src-2', 'src-2'], ['#fig-a', 'fig-a'], ['other.md#srcother', 'oth-dir']]);
-  assert.equal(render('Job <@src-1, @src-2>.').querySelector('p')?.textContent, 'Job <src-1, src-2>.');
-  // Bare shorthand and incomplete brackets keep MyST's target text.
-  assert.deepEqual(links('@src-1 and @fig-a, <@src-1 alone'),
-    [['#src-1', 'core/loco/protocol/job/'], ['#fig-a', 'Figure 1'], ['#src-1', 'core/loco/protocol/job/']]);
+  const paragraph = render('Job{src}`s1` and{src}`s2, fig-a, oth-dir, src-client`; missing{src}`s9`.').querySelector('p')!;
+  const sups = [...paragraph.querySelectorAll('sup')];
+  assert.deepEqual(sups.map(sup => sup.textContent), ['s1', '⟨s2, fig-a, oth-dir, src-client⟩', 's9']);
+  assert.deepEqual([...paragraph.querySelectorAll('sup a')].map(a => [a.getAttribute('href'), a.textContent]),
+    [['#s1', 's1'], ['#s2', 's2'], ['#fig-a', 'fig-a'], ['other.md#srcother', 'oth-dir'], ['#src-client', 'src-client']]);
+  assert.equal(sups[2].querySelector('a'), null, 'An unknown label stays visible without a link');
+  assert.equal(paragraph.textContent, 'Jobs1 and⟨s2, fig-a, oth-dir, src-client⟩; missings9.');
+  // Ordinary references keep MyST's target text.
+  assert.deepEqual([...render('@s1 and @fig-a').querySelectorAll('p a')].map(a => a.textContent?.replace(/\s+/g, ' ')), ['core/loco/protocol/job/', 'Figure 1']);
 });

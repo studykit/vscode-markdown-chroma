@@ -256,22 +256,6 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     // before the transforms below rewrite cites and links into cross-references.
     const textless = new WeakSet<Node>();
     walk(tree, node => { if (['crossReference', 'cite', 'link'].includes(node.type) && !node.children?.length) textless.add(node); });
-    // `<@a>` and `<@a, @b>` cite evidence by label: they show the label whatever
-    // the target, as AgentIDE and source-citation book plugins do. MyST parses
-    // the brackets and separators as text siblings of narrative citations.
-    const labelCites = new WeakSet<Node>();
-    walk(tree, node => {
-      const children = node.children as Node[] | undefined;
-      if (!children) return;
-      for (let start = 0; start < children.length; start++) {
-        if (children[start].type !== 'text' || !String(children[start].value).endsWith('<')) continue;
-        let last = start + 1;
-        while (children[last]?.type === 'cite' && children[last + 1]?.type === 'text' && /^\s*,\s*$/.test(children[last + 1].value)) last += 2;
-        if (children[last]?.type !== 'cite' || children[last + 1]?.type !== 'text' || !String(children[last + 1].value).startsWith('>')) continue;
-        for (let index = start + 1; index <= last; index += 2) labelCites.add(children[index]);
-        start = last;
-      }
-    });
     // The project CLI marks unmatched bibliography shorthand before resolving
     // it against local targets. Standalone previews have no citation pipeline.
     walk(tree, node => { if (node.type === 'cite' && state.getTarget(node.identifier)) node.error = true; });
@@ -411,8 +395,7 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     walk(tree, node => {
       if (node.type !== 'crossReference' || !node.resolved) return;
       const [only] = node.children ?? [];
-      const kindName = textless.has(node) && node.enumerator == null && node.children?.length === 1 && only.type === 'text' && only.value === node.template;
-      if (!labelCites.has(node) && !kindName) return;
+      if (!textless.has(node) || node.enumerator != null || node.children?.length !== 1 || only.type !== 'text' || only.value !== node.template) return;
       const label = String(node.label ?? node.identifier);
       node.children = [{ type: 'text', value: label.slice(label.indexOf('#') + 1) }];
     });

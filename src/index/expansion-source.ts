@@ -58,6 +58,7 @@ export function markdownFromAst(node: ExpansionNode, issue: (message: string) =>
     case 'emphasis': return `*${children().trimEnd()}*`;
     case 'chemicalFormula': return `{chem}\`${node.value ?? children()}\``;
     case 'smallcaps': case 'subscript': case 'superscript': case 'keyboard': {
+      if (Array.isArray(node.sourceLabels)) return `{src}\`${node.sourceLabels.join(', ')}\``;
       const role = { smallcaps: 'sc', subscript: 'sub', superscript: 'sup', keyboard: 'kbd' }[node.type];
       return `{${role}}\`${children()}\``;
     }

@@ -7,11 +7,12 @@ import { buttonRole } from 'myst-ext-button';
 import { defaultOptions } from 'myst-parser';
 import type { DirectiveSpec } from 'myst-common';
 import { termDirective, termOptionNames } from './glossary';
+import { sourceCitationRole } from './source-citation';
 
 // Built-in extensions shared by preview, indexing, and explicit expansion.
 export const previewMystOptions = {
   directives: [...gridDirectives, cardDirective, ...tabDirectives, proofDirective, ...exerciseDirectives, termDirective('term-def')],
-  roles: [buttonRole], extensions: { frontmatter: false, strikethrough: true }
+  roles: [buttonRole, sourceCitationRole], extensions: { frontmatter: false, strikethrough: true }
 };
 
 const builtInNames = new Set([...defaultOptions.directives, ...previewMystOptions.directives].flatMap(spec => [spec.name, ...(spec.alias ?? [])]));

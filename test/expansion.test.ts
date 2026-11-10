@@ -84,11 +84,11 @@ test('block embeds read exact saved block ranges and reject ambiguous or hidden 
 });
 
 test('expanded bodies retain callouts, tasks, colored marks, wiki syntax, roles and footnotes', async t => {
-  const source = '::::{note}\n> [!tip]- Details\n> ==🔴marked== [[Target|label]] #tag\n\n- [x] Done\n\n{sc}`Name` {sub}`2` {sup}`3` {kbd}`Ctrl` and footnote[^one].\n\n[^one]: Body **bold**.\n::::\n';
+  const source = '::::{note}\n> [!tip]- Details\n> ==🔴marked== [[Target|label]] #tag\n\n- [x] Done\n\n{sc}`Name` {sub}`2` {sup}`3` {kbd}`Ctrl` evidence{src}`s1, s2` and footnote[^one].\n\n[^one]: Body **bold**.\n::::\n';
   const f = await fixture({ 'guide.md': source, 'Target.md': '# Target\n' }); t.after(f.cleanup);
   const result = await f.expand('guide.md', 'note');
   assert.equal(result.complete, true, JSON.stringify(result.diagnostics));
-  for (const value of ['> [!tip]- Details', '> ==🔴marked== [[Target|label]] #tag', '- [x] Done', '{sc}`Name`', '{sub}`2`', '{sup}`3`', '{kbd}`Ctrl`', '[^one]', '[^one]: Body **bold**.']) assert.ok(result.content.includes(value), result.content);
+  for (const value of ['> [!tip]- Details', '> ==🔴marked== [[Target|label]] #tag', '- [x] Done', '{sc}`Name`', '{sub}`2`', '{sup}`3`', '{kbd}`Ctrl`', 'evidence{src}`s1, s2`', '[^one]', '[^one]: Body **bold**.']) assert.ok(result.content.includes(value), result.content);
 });
 
 test('commented occurrences cannot select or execute plugins and preserve CRLF selection offsets', async t => {
