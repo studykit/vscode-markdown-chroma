@@ -6,13 +6,14 @@ import { previewReferenceIdentifiers } from './preview-reference-index';
 import { mystConfiguration, termDirectiveDeclarations } from './myst-config';
 import { configuredTermDirectives } from './myst-options';
 import { FOLDER_GLOSSARY_CONFIG, matchFolderGlossary, parseFolderGlossaryConfig } from './folder-glossary';
+import { IGNORE_FILE, MAX_IGNORE_FILE_BYTES, PathRules } from './ignore-rules';
 import type { Resolution } from './types';
 
-const ignored = new Set(['.git', '.obsidian', 'node_modules']);
 const maxNoteBytes = 2 * 1024 * 1024;
 const key = (value: string) => value.normalize('NFC').toLocaleLowerCase();
 const markdownFile = /\.(?:md|markdown)$/i;
 type TermDeclarations = { value: unknown; signature: string };
+type ReferenceRecord = { signature: string; identifiers: Set<string>; dirty: boolean };
 
 export function isWithin(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
@@ -39,18 +40,38 @@ export class FileVault {
   private aliases = new Map<string, string[]>();
   private cached = new Map<string, { signature: string; source: string }>();
   private generation = 0;
-  private referenceRecords = new Map<string, { signature: string; identifiers: Set<string> }>();
+  private referenceRecords = new Map<string, ReferenceRecord>();
+  // Identifier -> files whose current record declares it, so a lookup checks
+  // only those candidates instead of every Markdown file in the root.
+  private referenceOwners = new Map<string, Set<string>>();
+  // Records computed from editor text must be rechecked once the editor closes.
+  private dirtyRecords = new Set<string>();
   private referenceDeclarations = new Map<string, TermDeclarations>();
   private folderGlossaryHeadings = new Map<string, string>();
+  private pathRules = PathRules.none();
 
-  constructor(readonly root: string, private readonly dirtyText: (file: string) => string | undefined = () => undefined) {}
+  constructor(
+    readonly root: string,
+    private readonly dirtyText: (file: string) => string | undefined = () => undefined,
+    private readonly openFiles: () => Iterable<string> = () => [],
+  ) {}
+
+  /** Built-in exclusions and the root's `.chromaignore` patterns. */
+  excludes(file: string, directory = false): boolean {
+    if (!isWithin(this.root, file)) return true;
+    if (file === path.join(this.root, IGNORE_FILE)) return false;
+    return this.pathRules.excludes(path.relative(this.root, file), directory);
+  }
 
   async refresh(): Promise<void> {
     const generation = ++this.generation;
     const files = new Map<string, string>();
     const names = new Map<string, string[]>();
     const aliases = new Map<string, string[]>();
-    const referenceRecords = new Map<string, { signature: string; identifiers: Set<string> }>();
+    const referenceRecords = new Map<string, ReferenceRecord>();
+    const ignoreSource = this.read(path.join(this.root, IGNORE_FILE));
+    const pathRules = ignoreSource !== undefined && Buffer.byteLength(ignoreSource) > MAX_IGNORE_FILE_BYTES
+      ? PathRules.parse(undefined, `${IGNORE_FILE} — File exceeds the 256 KiB limit.`) : PathRules.parse(ignoreSource);
     const add = (map: Map<string, string[]>, name: string, file: string) => {
       const normalized = key(name);
       map.set(normalized, [...(map.get(normalized) ?? []), file]);
@@ -59,8 +80,8 @@ export class FileVault {
       let entries: fs.Dirent[];
       try { entries = await fs.promises.readdir(directory, { withFileTypes: true }); } catch { return; }
       for (const entry of entries) {
-        if (ignored.has(entry.name) || entry.name.startsWith('.') || entry.isSymbolicLink()) continue;
         const file = path.join(directory, entry.name);
+        if (entry.isSymbolicLink() || pathRules.excludes(path.relative(this.root, file), entry.isDirectory())) continue;
         if (entry.isDirectory()) { await walk(file); continue; }
         if (!entry.isFile()) continue;
         files.set(key(path.relative(this.root, file).split(path.sep).join('/')), file);
@@ -108,7 +129,7 @@ export class FileVault {
         referenceDeclarations.set(directory, declarations);
       }
       const relative = path.relative(this.root, file).split(path.sep);
-      const { heading } = relative.includes('_build') ? {} : matchFolderGlossary(glossaryConfig, relative.join('/'));
+      const { heading } = matchFolderGlossary(glossaryConfig, relative.join('/'));
       if (heading) folderGlossaryHeadings.set(file, heading);
       const record = this.referenceRecord(file, declarations ?? null, heading ?? '');
       if (record) referenceRecords.set(file, record);
@@ -119,7 +140,11 @@ export class FileVault {
     this.files = files;
     this.names = names;
     this.aliases = aliases;
-    this.referenceRecords = referenceRecords;
+    this.pathRules = pathRules;
+    this.referenceRecords = new Map();
+    this.referenceOwners = new Map();
+    this.dirtyRecords = new Set();
+    for (const [file, record] of referenceRecords) this.storeRecord(file, record);
     this.referenceDeclarations = referenceDeclarations;
     this.folderGlossaryHeadings = folderGlossaryHeadings;
     this.cached.clear();
@@ -181,11 +206,21 @@ export class FileVault {
   }
 
   *referenceFiles(identifier: string, source: string): Iterable<string> {
-    for (const file of this.markdownFiles(source)) {
+    if (!isWithin(this.root, source)) return;
+    // Open editors and records last built from editor text can differ from
+    // the inventory; saved files are updated through `invalidate` and refresh.
+    const candidates = new Set([...this.referenceOwners.get(identifier) ?? [], ...this.dirtyRecords, ...this.openFiles()]);
+    for (const file of [...candidates].sort()) {
+      if (!this.indexed(file)) continue;
       // Recheck signatures here too: dirty buffers and saves can precede the
       // next debounced project refresh. Unrelated documents are not reparsed.
       if (this.referenceRecord(file)?.identifiers.has(identifier)) yield file;
     }
+  }
+
+  /** Re-inventories one saved Markdown file after a file event, before the debounced refresh. */
+  invalidate(file: string): void {
+    if (this.indexed(file)) this.referenceRecord(file);
   }
 
   folderGlossaryHeading(file: string): string | undefined {
@@ -204,10 +239,29 @@ export class FileVault {
       if (cached?.signature === signature) return cached;
       const source = this.read(file);
       const folder = heading ? { file: path.basename(file), heading } : undefined;
-      const record = { signature, identifiers: source === undefined ? new Set<string>() : previewReferenceIdentifiers(source, declarations?.value, folder) };
-      this.referenceRecords.set(file, record);
+      const record = { signature, dirty: dirty !== undefined, identifiers: source === undefined ? new Set<string>() : previewReferenceIdentifiers(source, declarations?.value, folder) };
+      this.storeRecord(file, record);
       return record;
     } catch { return; }
+  }
+
+  private storeRecord(file: string, record: ReferenceRecord): void {
+    for (const identifier of this.referenceRecords.get(file)?.identifiers ?? []) {
+      const owners = this.referenceOwners.get(identifier);
+      owners?.delete(file);
+      if (owners?.size === 0) this.referenceOwners.delete(identifier);
+    }
+    this.referenceRecords.set(file, record);
+    for (const identifier of record.identifiers) {
+      let owners = this.referenceOwners.get(identifier);
+      if (!owners) this.referenceOwners.set(identifier, owners = new Set());
+      owners.add(file);
+    }
+    if (record.dirty) this.dirtyRecords.add(file); else this.dirtyRecords.delete(file);
+  }
+
+  private indexed(file: string): boolean {
+    return markdownFile.test(file) && this.files.get(key(path.relative(this.root, file).split(path.sep).join('/'))) === file;
   }
 
   updateAliases(file: string, source: string): void {

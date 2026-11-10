@@ -65,10 +65,44 @@ test('reference candidates track saved and dirty labels without executing or ind
   f.dirty.delete(target);
   assert.deepEqual(candidates('real-label'), [other, target].sort());
   await fs.writeFile(target, '(saved-label)=\n## Saved\n');
+  assert.deepEqual(candidates('saved-label'), [], 'Saved files are re-inventoried by file events or refresh');
+  f.vault.invalidate(target);
   assert.deepEqual(candidates('saved-label'), [target]);
+  await fs.writeFile(target, '(edited-label)=\n## Edited\n');
+  await f.vault.refresh();
+  assert.deepEqual(candidates('saved-label'), []);
+  assert.deepEqual(candidates('edited-label'), [target]);
+  await fs.writeFile(target, '(saved-label)=\n## Saved\n');
+  f.vault.invalidate(target);
   await fs.rm(target);
   assert.deepEqual(candidates('saved-label'), []);
   assert.deepEqual([...f.vault.referenceFiles('real-label', path.join(f.root, '..', 'outside.md'))], []);
+});
+
+test('build output and .chromaignore patterns are excluded from lookup and reference candidates', async t => {
+  const label = '(shared)=\n## Shared\n';
+  const f = await fixture(t, {
+    'Main.md': '', 'Target.md': label, '_build/site/Target-0123.md': label, 'node_modules/pkg/Target.md': label,
+    'archive/Old.md': label, 'archive/Keep.md': label, 'drafts/Draft.md': label, 'notes/Draft.md': label, 'image.png': '',
+    '.chromaignore': '# Gitignore syntax\narchive/\n!archive/Keep.md\n/drafts\n*.png\n',
+  });
+  const source = path.join(f.root, 'Main.md');
+  assert.deepEqual([...f.vault.referenceFiles('shared', source)].map(file => path.relative(f.root, file)).sort(),
+    ['Target.md', 'notes/Draft.md'], 'A file inside an excluded directory cannot be re-included, as in Git');
+  assert.equal(f.vault.resolve('Old', source).status, 'missing');
+  assert.equal(f.vault.resolve('image.png', source).status, 'missing');
+  assert.deepEqual(f.vault.resolve('Draft', source), { status: 'found', path: path.join(f.root, 'notes/Draft.md') });
+  assert.equal(f.vault.excludes(path.join(f.root, '_build/site/Target-0123.md')), true);
+  assert.equal(f.vault.excludes(path.join(f.root, '.claude/state.json')), true);
+  assert.equal(f.vault.excludes(path.join(f.root, 'archive'), true), true);
+  assert.equal(f.vault.excludes(path.join(f.root, 'Target.md')), false);
+  assert.equal(f.vault.excludes(path.join(f.root, '.chromaignore')), false, 'Ignore-file edits must refresh the index');
+  f.dirty.set(path.join(f.root, '.chromaignore'), 'notes/\n');
+  await f.vault.refresh();
+  assert.equal(f.vault.resolve('Old', source).status, 'found', 'Unsaved ignore-file edits apply to the preview');
+  assert.equal(f.vault.resolve('image.png', source).status, 'found');
+  assert.equal(f.vault.resolve('Draft', source).status, 'found');
+  assert.deepEqual(f.vault.resolve('Draft', source), { status: 'found', path: path.join(f.root, 'drafts/Draft.md') });
 });
 
 test('preview roots use the workspace or containing folder regardless of .obsidian directories', async t => {

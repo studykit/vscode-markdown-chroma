@@ -250,10 +250,29 @@ Plugins can generate headings, terms, images, or references that are absent from
 
 Use [explicit expansion](#expand-a-directive-or-document-embed) to read generated content at a saved occurrence. This is separate from static indexing and source reads.
 
+## Exclude files with `.chromaignore`
+
+Hidden files and folders, `node_modules`, and `_build` are always excluded. To exclude more of a project, such as generated copies, archives, or vendored sources, place a `.chromaignore` file at the root. It uses `.gitignore` syntax:
+
+```gitignore
+# Generated output and archived notes
+site/
+archive/**
+/drafts
+*.generated.md
+```
+
+- Patterns are relative to the root. Only the root's `.chromaignore` is read; nested ignore files are not.
+- An excluded directory hides everything below it. As in Git, a `!` pattern cannot re-include a file inside an excluded directory.
+- Excluded files are not indexed, listed, read by file arguments, or watched. Markdown Preview applies the same file to link, embed, and cross-reference lookup.
+- A `.chromaignore` that is not a regular file, is a symlink, or exceeds 256 KiB is ignored and reported as `invalidIgnoreFile`; the built-in exclusions still apply.
+
+The project's `.gitignore` is not used. Git-ignored local notes may still be worth indexing; list what Chroma should skip in `.chromaignore`.
+
 ## Cache and limits
 
 - The cache lives in the user cache directory under `markdown-chroma`, separately for each root. Use `--cache-dir` to choose another location. `index --rebuild` reparses everything.
-- `.md` and `.markdown` documents are indexed. Hidden paths, `node_modules`, `_build`, symlinks, and the root's cache directory are excluded.
+- `.md` and `.markdown` documents are indexed. Hidden paths, `node_modules`, `_build`, symlinks, the root's cache directory, and paths matched by [`.chromaignore`](#exclude-files-with-chromaignore) are excluded.
 - MyST configuration and document frontmatter apply to parsing. Source, configuration, local plugin, and bibliography files each have a 2 MiB limit. Plugin edits invalidate affected cached records.
 - Default responses and `--json` contain information for finding and reading content. Internal index records are available through `--debug` and the public Node API.
 - Partial results exit with code `1` and issues go to stderr; JSON results also have `complete: false`. Invalid arguments exit with code `2`. Ambiguous choices provide candidates for the next read.

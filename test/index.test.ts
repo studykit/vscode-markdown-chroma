@@ -459,3 +459,19 @@ test('excluded paths and symlinks cannot become indexed or readable; invalid doc
   assert.equal((await f.cli('sections', 'bad.md', '--debug')).json().sections[0].title, 'Still parsed');
   assert.equal((await f.cli('sections', 'link.md', '--debug')).json().error.code, 'fileNotFound');
 });
+
+test('.chromaignore uses gitignore syntax for traversal, reads and invalid configuration', async t => {
+  const f = await fixture({ 'a.md': '# A\n', 'archive/old.md': '# Old\n', 'archive/keep.md': '# Keep\n', 'notes/b.md': '# B\n', 'notes/tmp.md': '# Tmp\n', '.chromaignore': 'archive/\n!archive/keep.md\n**/tmp.md\n' }); t.after(f.cleanup);
+  const result = await f.cli('notes', '--debug');
+  assert.equal(result.code, 0);
+  assert.deepEqual(result.json().notes.map((n: any) => n.file), ['a.md', 'notes/b.md']);
+  assert.equal((await f.cli('sections', 'archive/old.md', '--debug')).json().error.code, 'fileNotFound');
+  await f.write('.chromaignore', 'notes/\n');
+  assert.deepEqual((await f.cli('notes', '--debug')).json().notes.map((n: any) => n.file), ['a.md', 'archive/keep.md', 'archive/old.md']);
+  await fs.rm(path.join(f.root, '.chromaignore'));
+  await fs.mkdir(path.join(f.root, '.chromaignore'));
+  const invalid = await f.cli('notes', '--debug');
+  assert.equal(invalid.code, 1);
+  assert.ok(invalid.json().diagnostics.some((d: any) => d.code === 'invalidIgnoreFile'));
+  assert.equal(invalid.json().notes.length, 5, 'Built-in exclusions still apply when the ignore file is unusable');
+});
