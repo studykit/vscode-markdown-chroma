@@ -475,3 +475,13 @@ test('.chromaignore uses gitignore syntax for traversal, reads and invalid confi
   assert.ok(invalid.json().diagnostics.some((d: any) => d.code === 'invalidIgnoreFile'));
   assert.equal(invalid.json().notes.length, 5, 'Built-in exclusions still apply when the ignore file is unusable');
 });
+
+test('{src} labels are indexed as references and resolve to local and cross-file targets', async t => {
+  const f = await fixture({ 'a.md': '# A\nClaim{src}`s1, s2, missing`.\n\n(s1)=\n`One.kt#L1`\n', 'b.md': '(s2)=\n# Two\n' }); t.after(f.cleanup);
+  await f.index.refresh();
+  const references = f.index.document('a.md').outgoing;
+  assert.deepEqual(references.map(item => [item.kind, item.target, item.syntax, item.raw]),
+    [['ref', 's1', 'myst', '{src}`s1, s2, missing`'], ['ref', 's2', 'myst', '{src}`s1, s2, missing`'], ['ref', 'missing', 'myst', '{src}`s1, s2, missing`']]);
+  assert.deepEqual(references.map(item => item.resolution?.file ?? null), ['a.md', 'b.md', null]);
+  assert.equal(f.index.document('a.md').diagnostics.some(item => /unknown role/.test(item.message)), false);
+});

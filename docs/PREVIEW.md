@@ -111,7 +111,7 @@ Every preview uses the same MyST parser with Obsidian syntax enabled, including 
 | Images, figures, and videos | Image dimensions and alignment, captions, numbering, references, MP4, and local image wildcards |
 | Math and equations | KaTeX math, labels, and equation references |
 | Tables and code | Tables, list-table, code, and captions; table/code captions appear above their content |
-| Cross-references | `[](#label)`, `[text](#label)`, the `@label` shorthand, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Labels resolve in the rendered document first, then as unique labels in other Markdown files inside the document root, or through an explicit `[](file.md#label)`. `[](./file.md)` and `{doc}` show the page title. A reference without text shows its target's title, number, or label; `<@src-1, @src-2>` always shows labels (see [reference display text](#reference-display-text)). Clicking a link opens the target document at the labeled section, figure, equation, table, or block; content hover popups and external `xref:` projects are not supported |
+| Cross-references | `[](#label)`, `[text](#label)`, the `@label` shorthand, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Labels resolve in the rendered document first, then as unique labels in other Markdown files inside the document root, or through an explicit `[](file.md#label)`. `[](./file.md)` and `{doc}` show the page title. A reference without text shows its target's title, number, or label (see [reference display text](#reference-display-text)). The `{src}` role cites evidence labels as superscript links (see [source citations](#source-citations)). Clicking a link opens the target document at the labeled section, figure, equation, table, or block; content hover popups and external `xref:` projects are not supported |
 | Embeds and includes | Local include/literalinclude, label embeds, and saved Jupyter notebook outputs |
 | Citations and bibliography | Local BibTeX files selected by frontmatter or a bibliography directive |
 | Proofs and exercises | Theorems, proofs, exercises, solutions, and numbering |
@@ -133,31 +133,38 @@ By default, the preview displays local files without executing project code. Aut
 
 Text you write for a reference, such as `[Text](#label)` or `` {ref}`Text <label>` ``, is always kept. Without it, Preview picks the text from the target:
 
-| Written as | Target | Displays |
-| --- | --- | --- |
-| `@label`, `[](#label)`, `` {ref}`label` `` | Heading | The heading title |
-| | Figure, table, code, or equation with a number | Its number, such as `Figure 1` or `(1)` |
-| | Titled block, such as an admonition or dropdown | The title |
-| | Untitled, unnumbered block, such as a labeled paragraph | The label, such as `src-1` |
-| `<@label>` or `<@label, @label>` | Any target, including headings and numbered targets | The labels, such as `<src-1, src-2>` |
+| Target | Displays |
+| --- | --- |
+| Heading | The heading title |
+| Figure, table, code, or equation with a number | Its number, such as `Figure 1` or `(1)` |
+| Titled block, such as an admonition or dropdown | The title |
+| Untitled, unnumbered block, such as a labeled paragraph | The label, such as `s1` |
 
-Use the angle-bracket form to cite evidence by label. Write `<`, one or more `@label` references separated by commas, then `>`. The brackets and commas stay as text, and each label links to its target:
+This applies to `@label`, `[](#label)`, and `` {ref}`label` ``. A MyST site build shows the target kind, such as `Paragraph`, for an untitled, unnumbered target instead of the label.
+
+### Source citations
+
+Cite evidence by label with the `{src}` role. Separate several labels with commas. Each label appears as a superscript link to its target, whatever the target is; several labels are grouped in mathematical angle brackets `⟨ ⟩` so they are not mistaken for bracketed footnotes:
 
 ```markdown
-Folder edits push a doorbell to other devices <@src-1, @src-2>.
+Folder edits push a doorbell to other devices{src}`s1`.
+Reorder pushes only when the revision advances{src}`s2, s3`.
 
 ## Source References
 
-(src-1)=
+(s1)=
 #### talkmsg-api/src/main/kotlin/chat/folder/
 
-(src-2)=
+(s2)=
 `ChatFolderService.kt#L206-L255`
+
+(s3)=
+`ChatFolderService.kt#L310`
 ```
 
-This displays as `Folder edits push a doorbell to other devices <src-1, src-2>.` A bare `@src-1` would show the heading path `talkmsg-api/src/main/kotlin/chat/folder/` instead.
+This displays as `…devices^s1.` and `…advances^⟨s2, s3⟩.`, with `^` marking superscript. Write the role directly after the word it supports; a space before it also appears in the preview. A label that resolves nowhere stays visible without a link. Labels resolve like other references: in the rendered document first, then as unique labels in other Markdown files inside the document root.
 
-A MyST site build differs in two places: it shows the target kind, such as `Paragraph`, for an untitled, unnumbered target, and it shows the target's title or number inside angle brackets. To display labels in a book, add a project transform plugin that rewrites these citations; Preview does not run plugin transforms. Avoid `[@src-1; @src-2]` for label citations: MyST treats it as a parenthetical citation group and, without bibliography entries, drops the brackets and separators. Preview shows `src-1src-2`, and a MyST build shows `ParagraphParagraph`.
+The CLI and MCP index record each `{src}` label as a reference, so source reads and backlinks include it. `{src}` is a Markdown Chroma role; a MyST site build needs a project plugin that defines the same role.
 
 ### Glossary aliases
 

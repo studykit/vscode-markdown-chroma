@@ -1,6 +1,6 @@
 /** Persisted records contain structure and references, never the document body. */
 export const SCHEMA_VERSION = 1;
-export const PARSER_VERSION = 'myst-parser@1.7.4/chroma-index@7';
+export const PARSER_VERSION = 'myst-parser@1.7.4/chroma-index@8';
 export interface Diagnostic { code: string; message: string; file?: string; line?: number; severity: 'warning' | 'error' }
 export interface Range { startLine: number; endLine: number }
 export interface Section extends Range {

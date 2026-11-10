@@ -12,6 +12,7 @@ import { termDirectiveDeclarations } from '../myst-config';
 import { glossaryIdentifier, normalizeGlossaries } from '../glossary';
 import { documentNodes, findFolderTerm, type FolderGlossaryMatch } from '../folder-glossary';
 import type { PluginNames } from './plugins';
+import { sourceCitationLabels } from '../source-citation';
 import { globalId, normalizeTag, type ContentItem, type DocumentIndex, type Reference, type Section, type Table, type Target } from './types';
 
 interface Node { type: string; children?: Node[]; position?: { start: { line: number; column: number }; end: { line: number; column: number } }; [key: string]: any }
@@ -211,6 +212,7 @@ export function parseIndex(file: string, source: string, settings: Record<string
       if (node.name === 'term') addReference(node, 'term', termIdentifier(target));
       else if (['ref', 'numref', 'eq'].includes(node.name)) addReference(node, 'ref', labelIdentifier(target));
       else if (node.name === 'doc') { const [fileTarget, ...fragment] = target.split('#'); addReference(node, 'doc', fileTarget, fragment.length ? fragment.join('#') : null); }
+      else if (node.name === 'src') for (const label of sourceCitationLabels(node.value ?? '')) addReference(node, 'ref', labelIdentifier(label));
       else if (node.name.startsWith('cite')) for (const cited of target.split(',').map((value: string) => value.trim()).filter(Boolean)) addReference(node, 'citation', labelIdentifier(cited));
       return;
     }
