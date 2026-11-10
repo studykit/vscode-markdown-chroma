@@ -111,7 +111,7 @@ Every preview uses the same MyST parser with Obsidian syntax enabled, including 
 | Images, figures, and videos | Image dimensions and alignment, captions, numbering, references, MP4, and local image wildcards |
 | Math and equations | KaTeX math, labels, and equation references |
 | Tables and code | Tables, list-table, code, and captions; table/code captions appear above their content |
-| Cross-references | `[](#label)`, `[text](#label)`, the `@label` shorthand, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Labels resolve in the rendered document first, then as unique labels in other Markdown files inside the document root, or through an explicit `[](file.md#label)`. `[](./file.md)` and `{doc}` show the page title. A reference without text to a target that has no title or number, such as a labeled paragraph, shows the label. Shorthand in angle brackets, `<@src-1>` or `<@src-1, @src-2>`, always shows its labels, even for headings and numbered targets: it displays as `<src-1, src-2>` with each label linked. Clicking a link opens the target document at the labeled section, figure, equation, table, or block; content hover popups and external `xref:` projects are not supported |
+| Cross-references | `[](#label)`, `[text](#label)`, the `@label` shorthand, `{ref}`, `{numref}`, and `{eq}`; automatic text and numbering; `{name}`, `{number}`, and `%s` substitutions. Labels resolve in the rendered document first, then as unique labels in other Markdown files inside the document root, or through an explicit `[](file.md#label)`. `[](./file.md)` and `{doc}` show the page title. A reference without text shows its target's title, number, or label; `<@src-1, @src-2>` always shows labels (see [reference display text](#reference-display-text)). Clicking a link opens the target document at the labeled section, figure, equation, table, or block; content hover popups and external `xref:` projects are not supported |
 | Embeds and includes | Local include/literalinclude, label embeds, and saved Jupyter notebook outputs |
 | Citations and bibliography | Local BibTeX files selected by frontmatter or a bibliography directive |
 | Proofs and exercises | Theorems, proofs, exercises, solutions, and numbering |
@@ -128,6 +128,36 @@ For example, `` {ref}`Code evidence <relay-section>` `` first looks for `(relay-
 Plain dotted names such as `malang.cow / remi.ni` remain text. Use an explicit URL such as `https://remi.ni` or `[Profile](https://remi.ni)` for a web link. Email addresses continue to link automatically.
 
 By default, the preview displays local files without executing project code. Automatic DOI or external project lookup, Jupyter execution, `.tex` conversion, PDF/EPS/TIFF image conversion, and PDF/Word publishing are outside its scope. External iframes appear as links under the built-in Preview's security policy. Invalid or unsupported directives display an error message. Frontmatter and Obsidian footnotes retain their existing presentation.
+
+### Reference display text
+
+Text you write for a reference, such as `[Text](#label)` or `` {ref}`Text <label>` ``, is always kept. Without it, Preview picks the text from the target:
+
+| Written as | Target | Displays |
+| --- | --- | --- |
+| `@label`, `[](#label)`, `` {ref}`label` `` | Heading | The heading title |
+| | Figure, table, code, or equation with a number | Its number, such as `Figure 1` or `(1)` |
+| | Titled block, such as an admonition or dropdown | The title |
+| | Untitled, unnumbered block, such as a labeled paragraph | The label, such as `src-1` |
+| `<@label>` or `<@label, @label>` | Any target, including headings and numbered targets | The labels, such as `<src-1, src-2>` |
+
+Use the angle-bracket form to cite evidence by label. Write `<`, one or more `@label` references separated by commas, then `>`. The brackets and commas stay as text, and each label links to its target:
+
+```markdown
+Folder edits push a doorbell to other devices <@src-1, @src-2>.
+
+## Source References
+
+(src-1)=
+#### talkmsg-api/src/main/kotlin/chat/folder/
+
+(src-2)=
+`ChatFolderService.kt#L206-L255`
+```
+
+This displays as `Folder edits push a doorbell to other devices <src-1, src-2>.` A bare `@src-1` would show the heading path `talkmsg-api/src/main/kotlin/chat/folder/` instead.
+
+A MyST site build differs in two places: it shows the target kind, such as `Paragraph`, for an untitled, unnumbered target, and it shows the target's title or number inside angle brackets. To display labels in a book, add a project transform plugin that rewrites these citations; Preview does not run plugin transforms. Avoid `[@src-1; @src-2]` for label citations: MyST treats it as a parenthetical citation group and, without bibliography entries, drops the brackets and separators. Preview shows `src-1src-2`, and a MyST build shows `ParagraphParagraph`.
 
 ### Glossary aliases
 
