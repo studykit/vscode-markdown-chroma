@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4
 
 - Add the `{src}` role for evidence citations. `` {src}`s1` `` shows a superscript label link, and `` {src}`s1, s2` `` groups labels in `⟨ ⟩`. The CLI and MCP index record each label as a reference.
 - Remove the angle-bracket label display for `<@label, @label>` added in 0.2.3; bare `@label` shows its target's text again.
