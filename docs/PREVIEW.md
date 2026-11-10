@@ -88,7 +88,7 @@ In an ordinary Markdown folder, the VS Code workspace folder is the document roo
 
 `folder/Note` is relative to the document root; `./Note` and `../Note` are relative to the current document. A bare filename is resolved in the current folder, then the root, then by a unique filename or alias within the root. Ambiguous links are marked as unresolved; specify a folder path to select the intended document. Missing notes are not created automatically.
 
-Unsaved changes in open notes are included in embeds. File creation, modification, deletion, and settings changes refresh the preview. Hidden files and folders, `node_modules`, and symbolic links are excluded from document lookup.
+Unsaved changes in open notes are included in embeds. File creation, modification, deletion, and settings changes refresh the preview. Hidden files and folders, `node_modules`, `_build`, and symbolic links are excluded from document lookup. To exclude more, such as generated copies or archives, list `.gitignore`-style patterns in a [`.chromaignore`](CLI.md#exclude-files-with-chromaignore) file at the document root; the CLI and MCP server use the same file. Unsaved edits to an open `.chromaignore` apply to the preview. Writes to excluded paths do not refresh the preview.
 
 | Setting | Default | Behavior |
 | --- | --- | --- |

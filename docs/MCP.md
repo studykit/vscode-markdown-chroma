@@ -130,7 +130,7 @@ The root must be an existing directory and stays fixed for the lifetime of the p
 
 Both stdio and HTTP watch saved files by default. Events are grouped over 300 ms, then the existing refresh checks the whole file list and hashes and reparses only changed documents. A full scan every 30 seconds covers missed events and replaced directories. Pass `--no-watch` to disable background watching; structural queries still refresh saved-file snapshots; line reads access saved source directly.
 
-Watch covers Markdown, MyST configuration, local plugin definitions, bibliography, and attachment changes. Hidden paths, `node_modules`, `_build`, symlinks, and the root's cache directory are excluded. SIGINT/SIGTERM stops both watcher and transport. The [CLI watch command](CLI.md#keep-the-index-up-to-date) uses the same core and can run independently.
+Watch covers Markdown, MyST configuration, local plugin definitions, bibliography, and attachment changes. Hidden paths, `node_modules`, `_build`, symlinks, the root's cache directory, and paths matched by the root's [`.chromaignore`](CLI.md#exclude-files-with-chromaignore) are excluded. Editing `.chromaignore` refreshes the index. SIGINT/SIGTERM stops both watcher and transport. The [CLI watch command](CLI.md#keep-the-index-up-to-date) uses the same core and can run independently.
 
 ## Tools
 

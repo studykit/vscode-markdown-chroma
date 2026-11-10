@@ -26,7 +26,7 @@ Status: specification for the implemented CLI v1 behavior. Default CLI text, CLI
 
 Set the project root with `--root <directory>`; the default is the current directory. Resolve all file arguments relative to this root. Link resolution for a bare filename differs from CLI file argument resolution: CLI file arguments are exact relative paths, and ambiguous filenames are never selected automatically.
 
-Recursively index `.md` and `.markdown` files under the root. By default, exclude hidden files and directories, `.git`, `.obsidian`, `node_modules`, `_build`, and symbolic links. Do not read or index files outside the root. If the root itself is a symbolic link, normalize it to its real path and apply the same boundary rules.
+Recursively index `.md` and `.markdown` files under the root. By default, exclude hidden files and directories, `.git`, `.obsidian`, `node_modules`, `_build`, and symbolic links. Also exclude paths matched by the root's `.chromaignore`, which uses `.gitignore` syntax relative to the root; a file inside an excluded directory cannot be re-included. Read it as a regular, non-symlink file of at most 256 KiB; otherwise report `invalidIgnoreFile` and apply only the built-in exclusions. Do not read the project's `.gitignore`. Do not read or index files outside the root. If the root itself is a symbolic link, normalize it to its real path and apply the same boundary rules.
 
 Read parsing settings from the nearest `myst.yml` or `myst.yaml` within the root. Document frontmatter overrides these settings. Use MyST defaults when no configuration file exists. Project configuration does not change the root automatically. Indexing and ordinary reads do not load remote configurations, external projects, or executable user code.
 
@@ -37,7 +37,7 @@ The CLI reads saved file contents. Unsaved edits in VS Code are outside this sco
 `markdown-chroma watch --root <directory>` refreshes the index at startup and keeps running. The stdio and HTTP MCP servers also use `startIndexWatch` by default; `--no-watch` disables background watching only. A separate CLI watcher and an MCP server share the same cache lock for their root.
 
 - Detect creation, modification, renaming, and deletion of saved Markdown files, MyST configurations, BibTeX files, and attachments. Exclude unsaved edits.
-- Apply the same exclusions as index traversal to hidden paths, `node_modules`, `_build`, symbolic links, and cache paths under the root. Cache writes must not trigger repeated refreshes.
+- Apply the same exclusions as index traversal to hidden paths, `node_modules`, `_build`, `.chromaignore` patterns, symbolic links, and cache paths under the root. Changes to `.chromaignore` itself trigger a refresh and update the watched directories. Cache writes must not trigger repeated refreshes.
 - Register `fs.watch` on included directories and collect events with a default debounce of 300 ms. Reattach watchers after directories are created, moved, or replaced.
 - Reuse the existing refresh after events. Check the full file list and source, configuration, and bibliography hashes, but reparse only changed documents. Resolve links and backlinks again.
 - Refresh every 30 seconds by default to cover missed OS events, watcher failures, and directory replacement. Retain full hash checks at query time.

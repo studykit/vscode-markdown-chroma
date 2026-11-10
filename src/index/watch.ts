@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { IndexService, QueryResult } from './query';
 import { IndexError } from './types';
 import { isExcludedIndexPath } from './paths';
+import { IGNORE_FILE, loadPathRules } from '../ignore-rules';
 
 export type IndexRefreshResult = Extract<QueryResult, { documentCount: number }>;
 export interface IndexWatchOptions {
@@ -24,7 +25,9 @@ export async function startIndexWatch(service: IndexService, options: IndexWatch
   let stopped = false, dirty = false, timer: ReturnType<typeof setTimeout> | undefined;
   let pending: Promise<void> | undefined, lastGeneration: number | undefined;
   const report = (error: unknown) => { if (!stopped) options.onError?.(error); };
-  const excluded = (absolute: string) => isExcludedIndexPath(service.root, absolute, cacheDirectory);
+  let rules = loadPathRules(service.root);
+  const ignoreFile = path.join(service.root, IGNORE_FILE);
+  const excluded = (absolute: string, directory = false) => isExcludedIndexPath(service.root, absolute, cacheDirectory, rules, directory);
   const schedule = () => {
     if (stopped) return;
     dirty = true;
@@ -35,6 +38,7 @@ export async function startIndexWatch(service: IndexService, options: IndexWatch
   const syncWatches = () => {
     // Cache paths may use a symlinked ancestor (e.g. /var on macOS).
     try { cacheDirectory = fs.realpathSync(path.dirname(service.cacheFile)); } catch { /* Created by the first refresh. */ }
+    rules = loadPathRules(service.root);
     const directories = new Map<string, string>();
     const visit = (directory: string) => {
       try {
@@ -43,7 +47,7 @@ export async function startIndexWatch(service: IndexService, options: IndexWatch
         directories.set(directory, `${stat.dev}:${stat.ino}`);
         for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
           const absolute = path.join(directory, entry.name);
-          if (entry.isDirectory() && !entry.isSymbolicLink() && !excluded(absolute)) visit(absolute);
+          if (entry.isDirectory() && !entry.isSymbolicLink() && !excluded(absolute, true)) visit(absolute);
         }
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') report(error); }
     };
@@ -55,7 +59,9 @@ export async function startIndexWatch(service: IndexService, options: IndexWatch
       if (watches.has(directory)) continue;
       try {
         const handle = fs.watch(directory, (_event, filename) => {
-          if (filename && excluded(path.resolve(directory, filename.toString()))) return;
+          const changed = filename && path.resolve(directory, filename.toString());
+          // The hidden ignore file changes which paths are indexed and watched.
+          if (changed && changed !== ignoreFile && excluded(changed)) return;
           schedule();
         });
         handle.on('error', error => {

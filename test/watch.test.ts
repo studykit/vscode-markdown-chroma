@@ -88,6 +88,27 @@ test('watch includes config, bibliography and assets; excludes hidden trees, sym
   } finally { await handle.close(); await f.cleanup(); }
 });
 
+test('watch skips .chromaignore paths and refreshes when the ignore file changes', { timeout: 10000 }, async () => {
+  const f = await fixture();
+  await fs.writeFile(path.join(f.root, '.chromaignore'), 'generated/\n');
+  await fs.mkdir(path.join(f.root, 'generated'));
+  let refreshCalls = 0;
+  const execute = f.service.execute.bind(f.service);
+  f.service.execute = (...args) => { refreshCalls++; return execute(...args); };
+  const handle = await startIndexWatch(f.service, { debounceMs: 40, pollIntervalMs: 30000, onRefresh: result => f.snapshots.push(result), onError: error => f.errors.push(error) });
+  try {
+    await delay(150); const settled = refreshCalls;
+    await fs.writeFile(path.join(f.root, 'generated', 'out.md'), '# Generated\n');
+    await delay(200);
+    assert.equal(refreshCalls, settled, 'writes under ignored directories must not refresh');
+    await fs.writeFile(path.join(f.root, '.chromaignore'), '');
+    await until(async () => (await f.snapshot()).documents.some((d: any) => d.file === 'generated/out.md'));
+    await fs.writeFile(path.join(f.root, 'generated', 'out.md'), '# Watched now\n');
+    await until(async () => (await f.snapshot()).documents.find((d: any) => d.file === 'generated/out.md')?.sections[0].title === 'Watched now');
+    assert.deepEqual(f.errors, []);
+  } finally { await handle.close(); await f.cleanup(); }
+});
+
 test('watch reparses registered plugin changes without changing the Markdown source', { timeout: 10000 }, async () => {
   const f = await fixture();
   await fs.writeFile(path.join(f.root, 'myst.yml'), 'project:\n  plugins: [plugin.mjs]\n');

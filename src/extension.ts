@@ -20,6 +20,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let indexTimer: ReturnType<typeof setTimeout> | undefined;
 
   const dirtyText = (file: string) => vscode.workspace.textDocuments.find(document => document.uri.fsPath === file)?.getText();
+  const openFiles = () => vscode.workspace.textDocuments.filter(document => document.uri.scheme === 'file').map(document => document.uri.fsPath);
   const rootFor = (file: string) => {
     const uri = vscode.Uri.file(file);
     const workspace = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
@@ -56,7 +57,7 @@ export async function activate(context: vscode.ExtensionContext) {
     if (existing) return existing;
     const indexed = vaults.get(root);
     if (indexed) return Promise.resolve(indexed);
-    const vault = new FileVault(root, dirtyText);
+    const vault = new FileVault(root, dirtyText, openFiles);
     vaults.set(root, vault);
     const ready = vault.refresh().then(() => {
       pending.delete(root);
@@ -153,6 +154,11 @@ export async function activate(context: vscode.ExtensionContext) {
     // Execute saved plugin modules only. Reload their entire dependency graph.
     if (!/\.(?:md|markdown|mdown|mkd)$/i.test(uri.fsPath)) plugins.scheduleInvalidate(uri.fsPath);
     if (uri.fsPath.split(path.sep).includes('node_modules')) { refreshPreviews(); return; }
+    // Build output, agent state and `.chromaignore` patterns are outside document
+    // lookup; writes there must not re-index the root or re-render previews.
+    const containing = [...vaults.values()].filter(vault => isWithin(vault.root, uri.fsPath));
+    if (containing.length && containing.every(vault => vault.excludes(uri.fsPath))) return;
+    for (const vault of containing) vault.invalidate(uri.fsPath);
     clearTimeout(indexTimer);
     indexTimer = setTimeout(() => { if (!disposed) void refresh(); }, 300);
   };

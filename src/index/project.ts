@@ -13,6 +13,7 @@ import { mystConfiguration, mergeSettings } from '../myst-config';
 import { isWithin } from '../vault';
 import { extract, hash, parseIndex } from './parser';
 import { isExcludedIndexPath } from './paths';
+import { loadPathRules, PathRules } from '../ignore-rules';
 import { inspectPlugin, type PluginNames } from './plugins';
 import { FOLDER_GLOSSARY_CONFIG, matchFolderGlossary, parseFolderGlossaryConfig } from '../folder-glossary';
 import { IndexError, PARSER_VERSION, SCHEMA_VERSION, type ContentItem, type Diagnostic, type DocumentIndex, type ProjectIndex, type Reference, type Resolution, type Section } from './types';
@@ -34,6 +35,7 @@ export class MarkdownIndex {
   readonly cacheFile: string;
   data!: ProjectIndex;
   private files = new Set<string>();
+  private pathRules = PathRules.none();
   private scanDiagnostics: Diagnostic[] = [];
   private normalizedFiles = new Map<string, string[]>();
   private readonly cacheDirectory: string;
@@ -66,7 +68,7 @@ export class MarkdownIndex {
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
       const absolute = path.join(directory, entry.name);
       // Custom caches inside the root are never indexed as source files.
-      if (entry.isSymbolicLink() || isExcludedIndexPath(this.root, absolute, cacheDirectory)) continue;
+      if (entry.isSymbolicLink() || isExcludedIndexPath(this.root, absolute, cacheDirectory, this.pathRules, entry.isDirectory())) continue;
       if (entry.isDirectory()) this.scan(absolute, cacheDirectory);
       else if (entry.isFile()) this.files.add(portable(path.relative(this.root, absolute)));
     }
@@ -230,6 +232,8 @@ export class MarkdownIndex {
     const release = await this.lock(signal);
     try {
       this.files.clear(); this.scanDiagnostics = []; this.stats = { parsed: 0, reused: 0, removed: 0 };
+      this.pathRules = loadPathRules(this.root);
+      if (this.pathRules.error) this.scanDiagnostics.push({ code: 'invalidIgnoreFile', severity: 'error', message: this.pathRules.error });
       this.scan(this.root);
       let folderGlossary = parseFolderGlossaryConfig(undefined);
       if (this.files.has(FOLDER_GLOSSARY_CONFIG)) {
@@ -429,7 +433,7 @@ export class MarkdownIndex {
     if (path.isAbsolute(file) || /[\0\\]/.test(file)) throw new IndexError('invalidFile', 'File arguments must be root-relative paths.');
     file = path.posix.normalize(file);
     if (file === '..' || file.startsWith('../')) throw new IndexError('outsideRoot', 'File is outside the root.');
-    if (!/\.(?:md|markdown)$/i.test(file) || isExcludedIndexPath(this.root, path.resolve(this.root, file), this.cacheDirectory))
+    if (!/\.(?:md|markdown)$/i.test(file) || isExcludedIndexPath(this.root, path.resolve(this.root, file), this.cacheDirectory, this.pathRules))
       throw new IndexError('fileNotFound', `Markdown file is excluded from the root: ${file}`);
     return file;
   }
@@ -437,7 +441,7 @@ export class MarkdownIndex {
   readExpansionSource(file: string): string {
     if (path.isAbsolute(file) || /[\0\\]/.test(file)) throw new IndexError('invalidFile', 'File arguments must be root-relative paths.');
     file = path.posix.normalize(file);
-    if (isExcludedIndexPath(this.root, path.resolve(this.root, file), this.cacheDirectory)) throw new IndexError('outsideRoot', 'Expansion source is outside the root or excluded.');
+    if (isExcludedIndexPath(this.root, path.resolve(this.root, file), this.cacheDirectory, this.pathRules)) throw new IndexError('outsideRoot', 'Expansion source is outside the root or excluded.');
     const source = this.readFile(file);
     const document = this.data?.documents.find(item => item.file === file);
     if (document?.sourceHash && hash(source) !== document.sourceHash) throw new IndexError('documentChanged', `Document changed; observe its source again: ${file}`);

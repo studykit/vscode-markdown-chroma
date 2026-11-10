@@ -16,7 +16,7 @@ export async function fixture(t: TestContext, files: Record<string, string>, dir
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, contents);
   }
-  const vault = new FileVault(root, file => dirty.get(file));
+  const vault = new FileVault(root, file => dirty.get(file), () => dirty.keys());
   await vault.refresh();
   const settings = { maxEmbedDepth: 5 };
   const host: PreviewHost = {
