@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Exclude `_build` output from Preview lookup, as the CLI and MCP index already did. Repeated MyST builds no longer duplicate every label, which made `{ref}` targets ambiguous and slowed rendering.
+- Add a root-level `.chromaignore` with `.gitignore` syntax to exclude more paths from Preview, CLI, and MCP. Writes to excluded paths no longer re-index the root or refresh previews.
+- Look up cross-file reference targets through an identifier index instead of rechecking every Markdown file per reference.
+
 ## 0.2.0
 
 - Organize a MyST glossary as one Markdown file per term. Preview, CLI, API, and MCP resolve canonical names and aliases, and the new MyST book transform generates term links and subject index entries.
