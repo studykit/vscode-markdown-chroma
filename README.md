@@ -60,6 +60,8 @@ See equation {eq}`energy`.
 
 See the [MyST authoring guide](https://mystmd.org/guide) for the syntax.
 
+To cite evidence by label, write `<@src-1, @src-2>`: Preview shows `<src-1, src-2>`, with each label linked to its target, even when a label names a heading. See [reference display text](https://github.com/studykit/vscode-markdown-chroma/blob/main/docs/PREVIEW.md#reference-display-text).
+
 Use one Markdown file per term and share the definitions between Chroma and a MyST book.
 The [file-based glossary setup guide](docs/MYST-FOLDER-GLOSSARY.md) ships in the npm package
 and covers configuration, term links, and the book index.
