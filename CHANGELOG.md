@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Show the label for a reference without text to an untitled, unnumbered target such as a labeled paragraph. `<@src-1, @src-2>` previously displayed as `<Paragraph, Paragraph>`.
+
 ## 0.2.1
 
 - Exclude `_build` output from Preview lookup, as the CLI and MCP index already did. Repeated MyST builds no longer duplicate every label, which made `{ref}` targets ambiguous and slowed rendering.
