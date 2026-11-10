@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
 
 - Show the label for a reference without text to an untitled, unnumbered target such as a labeled paragraph. `<@src-1, @src-2>` previously displayed as `<Paragraph, Paragraph>`.
 
