@@ -440,3 +440,17 @@ test('references to untitled, unnumbered targets show the label instead of the t
   assert.deepEqual(links('{ref}`Paragraph <src-1>` [see](#src-2) @oth-titled'),
     [['#src-1', 'Paragraph'], ['#src-2', 'see'], ['other.md#oth-titled', 'Titled']]);
 });
+
+test('angle-bracketed citations show labels for any target, including headings and numbered targets', async t => {
+  const f = await fixture(t, { 'Main.md': '', 'other.md': '(oth-dir)=\n#### src/other/\n' });
+  extendMystMarkdown(f.md, f.host);
+  const targets = '(src-1)=\n#### core/loco/protocol/job/\n\n(src-2)=\n`Write.java#L1`\n\n```{figure} x.png\n:label: fig-a\nCap\n```\n';
+  const render = (source: string) => dom(f.render(`${source}\n\n${targets}`));
+  const links = (source: string) => [...render(source).querySelectorAll('p a')].map(a => [a.getAttribute('href'), a.textContent?.replace(/\s+/g, ' ')]);
+  assert.deepEqual(links('Job <@src-1> and <@src-2, @fig-a, @oth-dir>.'),
+    [['#src-1', 'src-1'], ['#src-2', 'src-2'], ['#fig-a', 'fig-a'], ['other.md#srcother', 'oth-dir']]);
+  assert.equal(render('Job <@src-1, @src-2>.').querySelector('p')?.textContent, 'Job <src-1, src-2>.');
+  // Bare shorthand and incomplete brackets keep MyST's target text.
+  assert.deepEqual(links('@src-1 and @fig-a, <@src-1 alone'),
+    [['#src-1', 'core/loco/protocol/job/'], ['#fig-a', 'Figure 1'], ['#src-1', 'core/loco/protocol/job/']]);
+});
