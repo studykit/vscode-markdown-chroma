@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3
 
 - Show labels for angle-bracketed citations such as `<@src-1, @src-2>` regardless of the target, including labeled headings and numbered targets. Bare `@label` keeps MyST's target text.
 
