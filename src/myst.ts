@@ -252,6 +252,10 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
     });
     const state = new ReferenceState(file, { vfile, frontmatter: { ...metadata, numbering: validateNumbering(metadata.numbering, { property: 'numbering', messages: {} }) } });
     enumerateTargetsTransform(tree, { state });
+    // References written without text take it from their target. Remember them
+    // before the transforms below rewrite cites and links into cross-references.
+    const textless = new WeakSet<Node>();
+    walk(tree, node => { if (['crossReference', 'cite', 'link'].includes(node.type) && !node.children?.length) textless.add(node); });
     // The project CLI marks unmatched bibliography shorthand before resolving
     // it against local targets. Standalone previews have no citation pipeline.
     walk(tree, node => { if (node.type === 'cite' && state.getTarget(node.identifier)) node.error = true; });
@@ -386,6 +390,15 @@ export function extendMystMarkdown(md: MarkdownIt, host: PreviewHost): MarkdownI
       for (const key of Object.keys(node)) delete node[key];
       Object.assign(node, original);
     }
+    // Upstream text for an untitled, unnumbered target is its kind name alone,
+    // e.g. "Paragraph" for `<@src-1, @src-2>`. Show the label instead.
+    walk(tree, node => {
+      if (node.type !== 'crossReference' || !node.resolved || !textless.has(node) || node.enumerator != null) return;
+      const [only] = node.children ?? [];
+      if (node.children?.length !== 1 || only.type !== 'text' || only.value !== node.template) return;
+      const label = String(node.label ?? node.identifier);
+      node.children = [{ type: 'text', value: label.slice(label.indexOf('#') + 1) }];
+    });
     const allNodes: Node[] = [];
     walk(tree, node => allNodes.push(node));
     const footnoteNumbers = assignFootnoteNumbers(allNodes.filter(node => node.type === 'footnoteReference').map(node => node.identifier));

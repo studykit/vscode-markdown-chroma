@@ -423,3 +423,20 @@ test('cross-file links, shorthand and document links follow the MyST cross-refer
   const included = dom(f.render(':::{include} other.md\n:::'));
   assert.equal(included.querySelector('#oth-fig.code-line, #oth-eq[data-line]'), null);
 });
+
+test('references to untitled, unnumbered targets show the label instead of the target kind', async t => {
+  const f = await fixture(t, {
+    'Main.md': '', 'other.md': '(oth-para)=\nAn external paragraph.\n\n(oth-titled)=\n:::{note} Titled\nBody\n:::\n',
+  });
+  extendMystMarkdown(f.md, f.host);
+  const local = '(src-1)=\n`Handler.kt#L65-L80`\n\n(src-2)=\n`Dedup.kt#L92`\n';
+  const links = (source: string) => [...dom(f.render(`${source}\n\n${local}`)).querySelectorAll('a')]
+    .map(a => [a.getAttribute('href'), a.textContent?.replace(/\s+/g, ' ')]);
+  assert.deepEqual(links('Checked <@src-1, @src-2>.'), [['#src-1', 'src-1'], ['#src-2', 'src-2']]);
+  assert.equal(dom(f.render(`Checked <@src-1, @src-2>.\n\n${local}`)).querySelector('p')?.textContent, 'Checked <src-1, src-2>.');
+  assert.deepEqual(links('{ref}`src-1` [](#src-2) @oth-para [](./other.md#oth-para)'),
+    [['#src-1', 'src-1'], ['#src-2', 'src-2'], ['other.md#oth-para', 'oth-para'], ['other.md#oth-para', 'oth-para']]);
+  // Author text, titles and the literal kind name as author text stay unchanged.
+  assert.deepEqual(links('{ref}`Paragraph <src-1>` [see](#src-2) @oth-titled'),
+    [['#src-1', 'Paragraph'], ['#src-2', 'see'], ['other.md#oth-titled', 'Titled']]);
+});
