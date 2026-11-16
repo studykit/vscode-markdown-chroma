@@ -79,6 +79,9 @@ Use VS Code's normal Markdown preview settings and your preferred theme. For a d
 | `markdownChroma.preview.projectPlugins` | `false` | Enable local MyST project plugins in a trusted workspace |
 | `markdown.preview.frontMatter` | `"table"` | Show frontmatter as a table, code block, or hide it |
 | `markdown.preview.breaks` | `false` | Display single line breaks in the preview |
+| `markdownChroma.pdf.pageSize` | `"A4"` | Choose `A4` or `Letter` paper for PDF export |
+
+To save the rendered preview as a PDF, run **Markdown Chroma: Export Preview to PDF**. It prints through an installed Google Chrome, Microsoft Edge, Chromium, or Brave with a light print theme. See [PDF export](https://github.com/studykit/vscode-markdown-chroma/blob/main/docs/PREVIEW.md#pdf-export).
 
 For project plugin errors, run **Markdown Chroma: Show Project Plugin Logs**. After fixing the plugin, save it or focus the Markdown source and run **Markdown Chroma: Reload Project Plugins**. See the [plugin troubleshooting steps](https://github.com/studykit/vscode-markdown-chroma/blob/main/docs/PREVIEW.md#project-defined-myst-plugins).
 

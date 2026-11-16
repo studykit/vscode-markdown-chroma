@@ -289,6 +289,19 @@ If a plugin fails:
 
 This setting affects Preview only. CLI and MCP inspect plugin declarations statically and read original saved Markdown without executing plugins. Their separate [explicit expansion operation](CLI.md#expand-a-directive-or-document-embed) can execute registered directives when its own capability is enabled.
 
+## PDF export
+
+Run **Markdown Chroma: Export Preview to PDF** from the Command Palette, the editor context menu, the Explorer context menu for a Markdown file, or the `...` menu of an open preview. Choose where to save; the default is the source name with `.pdf` beside the source.
+
+The PDF uses the same rendering as Preview, including unsaved edits, embeds, includes, references, math, highlighted code, callout icons, and Mermaid diagrams. It uses a light print theme regardless of the VS Code color theme and applies `markdown.preview.fontFamily`, `fontSize`, and `lineHeight`. Folded callouts, dropdowns, and term details are expanded; tab sets print their first tab.
+
+Export prints through an installed Google Chrome, Microsoft Edge, Chromium, or Brave in headless mode with a temporary profile; nothing is downloaded. Scripts inside the document are not executed; only the bundled preview script runs, as in Preview. Remote `https:` images load as they do in Preview.
+
+| Setting | Default | Use it to |
+| --- | --- | --- |
+| `markdownChroma.pdf.browserPath` | `""` | Use a specific Chromium-based browser executable; empty searches standard install locations and `PATH` |
+| `markdownChroma.pdf.pageSize` | `"A4"` | Choose `A4` or `Letter` paper |
+
 ## Code syntax highlighting
 
 Fenced code blocks use VS Code's built-in preview highlighter. Specify a language after the opening fence:

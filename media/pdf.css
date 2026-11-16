@@ -1,0 +1,55 @@
+/* Light print theme for PDF export. VS Code supplies these variables in the
+   preview webview; a standalone page needs fixed Light Modern values. */
+body.markdown-chroma-pdf {
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #1f1f1f;
+  --vscode-editor-font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace;
+  --vscode-descriptionForeground: #616161;
+  --vscode-textLink-foreground: #005fb8;
+  --vscode-textLink-activeForeground: #005fb8;
+  --vscode-textCodeBlock-background: #f3f3f3;
+  --vscode-textBlockQuote-background: #f8f8f8;
+  --vscode-textBlockQuote-border: #d0d0d0;
+  --vscode-panel-border: #d8d8d8;
+  --vscode-widget-border: #d8d8d8;
+  --vscode-editorWidget-border: #c8c8c8;
+  --vscode-contrastBorder: transparent;
+  --vscode-focusBorder: #005fb8;
+  --vscode-editorWarning-foreground: #bf8803;
+  --vscode-editorError-foreground: #e51400;
+  --vscode-inputValidation-errorBackground: #f2dede;
+  --vscode-editorLineNumber-foreground: #6e7681;
+  --vscode-editorGutter-modifiedBackground: #2090d3;
+  --vscode-editor-selectionHighlightBackground: #add6ff80;
+  --vscode-testing-iconPassed: #388a34;
+  --vscode-toolbar-hoverBackground: #b8b8b850;
+  --vscode-toolbar-activeBackground: #a6a6a650;
+  --vscode-diffEditor-insertedTextBackground: #9ccc2c40;
+  --vscode-diffEditor-removedTextBackground: #ff000033;
+  --vscode-diffEditorGutter-insertedLineBackground: #9ccc2c66;
+  --vscode-diffEditorGutter-removedLineBackground: #ff000066;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  margin: 0;
+  /* Page margins come from the PDF settings. */
+  padding: 0;
+}
+
+html:has(> body.markdown-chroma-pdf) { padding: 0; }
+
+body.markdown-chroma-pdf pre,
+body.markdown-chroma-pdf code { white-space: pre-wrap; overflow-wrap: anywhere; }
+body.markdown-chroma-pdf pre,
+body.markdown-chroma-pdf blockquote,
+body.markdown-chroma-pdf table,
+body.markdown-chroma-pdf figure,
+body.markdown-chroma-pdf img,
+body.markdown-chroma-pdf svg,
+body.markdown-chroma-pdf .katex-display { break-inside: avoid; }
+body.markdown-chroma-pdf h1,
+body.markdown-chroma-pdf h2,
+body.markdown-chroma-pdf h3,
+body.markdown-chroma-pdf h4,
+body.markdown-chroma-pdf h5,
+body.markdown-chroma-pdf h6 { break-after: avoid; }
+body.markdown-chroma-pdf a { text-decoration: none; }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import * as vscode from 'vscode';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -120,6 +121,17 @@ export async function run(): Promise<void> {
   assert.match(html, /class="obsidian-footnote-backref" href="#fnref1"[^>]*>↩[₀-₉]*<\/a>/);
   assert.match(html, /obsidian-block-checklist/);
   console.log('PASS: built-in markdown.api.render loads the plugin and renders all showcase syntax');
+  const pdfDirectory = await fs.mkdtemp(path.join(tmpdir(), 'markdown-chroma-pdf-test-'));
+  try {
+    const pdf = vscode.Uri.file(path.join(pdfDirectory, 'Showcase.pdf'));
+    const written = await vscode.commands.executeCommand<string | undefined>('markdownChroma.exportPdf', showcase.uri, pdf);
+    if (written) {
+      const bytes = await fs.readFile(written);
+      assert.equal(bytes.subarray(0, 5).toString(), '%PDF-');
+      assert.ok(bytes.length > 10000, 'PDF has rendered content');
+      console.log('PASS: Export Preview to PDF writes a PDF through an installed browser');
+    } else console.log('SKIP: Export Preview to PDF needs an installed Chromium-based browser');
+  } finally { await fs.rm(pdfDirectory, { recursive: true, force: true }); }
 
   const unifiedHtml = (await vscode.commands.executeCommand<string>('markdown.api.render', { uri: showcase.uri, version: -1, getText: () => unifiedPreviewSource }))!;
   const unifiedDocument = new JSDOM(unifiedHtml).window.document;
