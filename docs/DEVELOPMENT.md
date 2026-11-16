@@ -76,6 +76,7 @@ Choose verification according to the change:
 | Shared Markdown parsing, MyST rendering, code lines, references, optional configuration, and shared glossary normalization | `src/markdown-parser.ts`, `src/source-positions.ts`, `src/myst.ts`, `src/code-lines.ts`, `src/references.ts`, `src/myst-config.ts`, `src/glossary.ts` |
 | Opt-in MyST preview plugin lifecycle, diagnostics, isolated parsing, and local module loading | `src/myst-options.ts`, `src/preview-plugins/manager.ts`, `src/preview-plugins/events.ts`, `src/preview-plugins/diagnostics.ts`, `src/preview-plugins/worker.ts`, `src/preview-plugins/loader.ts` |
 | Preview styles, folding, icons, and tabs | `media/preview.css`, `media/preview.js` |
+| PDF export page assembly, browser lookup, light print theme, and headless printing (`dist/pdf-printer.cjs`, loaded on demand) | `src/pdf/document.ts`, `src/pdf/printer.ts`, `media/pdf.css` |
 | Persistent indexing, parsing, static plugin inspection, source reads, records, shared queries, batch reads, retrieval responses, and file watching | `src/index/project.ts`, `src/index/parser.ts`, `src/index/plugins.ts`, `src/index/types.ts`, `src/index/query.ts`, `src/index/batch.ts`, `src/index/presentation.ts`, `src/index/paths.ts`, `src/index/watch.ts`, `src/index/watch-cli.ts` |
 | CLI entry point and argument handling | `src/cli.ts`, `src/index/cli.ts` |
 | Explicit saved-source directive/include/embed expansion, selection and readable output | `src/index/expansion.ts`, `src/index/expansion-source.ts`, `src/preview-plugins/expansion-parser.ts` |

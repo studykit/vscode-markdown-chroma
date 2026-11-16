@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add **Markdown Chroma: Export Preview to PDF**. It renders the document exactly as Preview does, including unsaved edits, embeds, math, and Mermaid diagrams, and prints with a light theme through an installed Chrome, Edge, Chromium, or Brave. `markdownChroma.pdf.browserPath` and `markdownChroma.pdf.pageSize` configure the browser and paper size.
+
 ## 0.2.4
 
 - Add the `{src}` role for evidence citations. `` {src}`s1` `` shows a superscript label link, and `` {src}`s1, s2` `` groups labels in `⟨ ⟩`. The CLI and MCP index record each label as a reference.
