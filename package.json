@@ -134,12 +134,6 @@
       }
     ],
     "menus": {
-      "commandPalette": [
-        {
-          "command": "markdownChroma.exportPdf",
-          "when": "editorLangId == markdown || activeWebviewPanelId == 'markdown.preview'"
-        }
-      ],
       "editor/title": [
         {
           "command": "markdownChroma.exportPdf",
