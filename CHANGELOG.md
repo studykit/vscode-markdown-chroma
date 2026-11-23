@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.5
 
 - Add **Markdown Chroma: Export Preview to PDF**. It renders the document exactly as Preview does, including unsaved edits, embeds, math, and Mermaid diagrams, and prints with a light theme through an installed Chrome, Edge, Chromium, or Brave. `markdownChroma.pdf.browserPath` and `markdownChroma.pdf.pageSize` configure the browser and paper size.
 
